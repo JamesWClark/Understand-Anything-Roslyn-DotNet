@@ -1,5 +1,7 @@
 <h1 align="center">Understand Anything</h1>
 
+> Team fork: start with [Windows setup and VB.NET/C# usage](TEAM_SETUP.md), covering the initial clone, prerequisites, installation, first analysis, daily use, updates and uninstall. Use that guide instead of the upstream marketplace installation below; marketplace installs do not contain this fork's Roslyn changes. Maintainers must publish the implementation branch before teammates can clone it.
+
 <p align="center">
   <strong>Turn any codebase, knowledge base, or docs into an interactive knowledge graph you can explore, search, and ask questions about.</strong>
   <br />

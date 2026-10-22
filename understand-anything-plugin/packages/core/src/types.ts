@@ -183,6 +183,7 @@ export interface ReferenceResolution {
 
 // Plugin interfaces
 export interface StructuralAnalysis {
+  dotNet?: import("./plugins/dotnet-plugin.js").DotNetFacts;
   functions: Array<{
     name: string;
     lineRange: [number, number];

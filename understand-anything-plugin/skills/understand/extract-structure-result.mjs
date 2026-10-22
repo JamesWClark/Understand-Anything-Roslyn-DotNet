@@ -233,6 +233,8 @@ export function buildResult(file, totalLines, nonEmptyLines, analysis, callGraph
       startLine: fn.lineRange[0],
       endLine: fn.lineRange[1],
       params: fn.params || [],
+      ...(fn.owner !== undefined ? { owner: fn.owner } : {}),
+      ...(fn.returnType !== undefined ? { returnType: fn.returnType } : {}),
     }));
   }
 
@@ -244,6 +246,11 @@ export function buildResult(file, totalLines, nonEmptyLines, analysis, callGraph
       methods: cls.methods || [],
       properties: cls.properties || [],
     }));
+  }
+
+  if (analysis.dotNet) {
+    base.dotNet = analysis.dotNet;
+    base.analysisComplete = analysis.dotNet.syntaxStatus === 'complete';
   }
 
   if (analysis.exports && analysis.exports.length > 0) {

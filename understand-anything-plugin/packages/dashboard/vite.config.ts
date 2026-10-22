@@ -39,7 +39,9 @@ function findGraphFile(fileName: string): string | null {
 }
 
 function projectRootFromGraphFile(candidate: string): string {
-  return path.dirname(path.dirname(candidate));
+  return process.env.UA_SOURCE_ROOT
+    ? fs.realpathSync(process.env.UA_SOURCE_ROOT)
+    : path.dirname(path.dirname(candidate));
 }
 
 function normalizeGraphPath(filePath: string, projectRoot: string): string | null {

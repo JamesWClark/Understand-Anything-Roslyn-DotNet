@@ -48,16 +48,13 @@ try {
 }
 
 const {
-  TreeSitterPlugin,
-  PluginRegistry,
-  builtinLanguageConfigs,
-  registerAllParsers,
   buildFingerprintStore,
   compareFingerprints,
   classifyUpdate,
   createIgnoreFilter,
   resolveUaDir,
 } = core;
+import { createAnalysisRegistry } from './create-analysis-registry.mjs';
 
 const SCAN_SCRIPT = join(__dirname, 'scan-project.mjs');
 const IMPORT_SCRIPT = join(__dirname, 'extract-import-map.mjs');
@@ -292,13 +289,7 @@ async function buildCurrentFingerprints(projectRoot, paths, headCommit) {
   }
 
   try {
-    const tsConfigs = builtinLanguageConfigs.filter(config => config.treeSitter);
-    const treeSitter = new TreeSitterPlugin(tsConfigs);
-    await treeSitter.init();
-    const registry = new PluginRegistry();
-    registry.register(treeSitter);
-    registerAllParsers(registry);
-    const structuralFingerprintLanguages = new Set(tsConfigs.map(config => config.id));
+    const { registry, structuralFingerprintLanguages } = await createAnalysisRegistry(core, projectRoot, paths);
     return buildFingerprintStore(projectRoot, paths, registry, headCommit, {
       structuralFingerprintLanguages,
     });

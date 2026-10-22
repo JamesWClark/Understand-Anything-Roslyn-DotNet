@@ -49,10 +49,10 @@ describe("LanguageRegistry", () => {
   });
 
   describe("createDefault", () => {
-    it("registers all 42 built-in language configs", () => {
+    it("registers all 43 built-in language configs", () => {
       const registry = LanguageRegistry.createDefault();
       const all = registry.getAllLanguages();
-      expect(all.length).toBe(42);
+      expect(all.length).toBe(43);
     });
 
     it("maps all expected extensions", () => {
@@ -68,6 +68,7 @@ describe("LanguageRegistry", () => {
       expect(registry.getByExtension(".kt")?.id).toBe("kotlin");
       expect(registry.getByExtension(".scala")?.id).toBe("scala");
       expect(registry.getByExtension(".cs")?.id).toBe("csharp");
+      expect(registry.getByExtension(".vb")?.id).toBe("vbnet");
       expect(registry.getByExtension(".cpp")?.id).toBe("cpp");
       expect(registry.getByExtension(".c")?.id).toBe("c");
       expect(registry.getByExtension(".h")?.id).toBe("c");

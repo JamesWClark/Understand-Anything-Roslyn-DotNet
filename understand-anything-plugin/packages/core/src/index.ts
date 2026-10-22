@@ -61,6 +61,8 @@ export {
   type LanguageLessonResult,
 } from "./analyzer/language-lesson.js";
 export { PluginRegistry } from "./plugins/registry.js";
+export { DotNetPlugin } from "./plugins/dotnet-plugin.js";
+export type { DotNetFacts, DotNetPluginOptions } from "./plugins/dotnet-plugin.js";
 export {
   LanguageRegistry,
   FrameworkRegistry,

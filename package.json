@@ -27,6 +27,10 @@
   "main": ".opencode/plugins/understand-anything.js",
   "packageManager": "pnpm@10.6.2+sha512.47870716bea1572b53df34ad8647b42962bc790ce2bf4562ba0f643237d7302a3d6a8ecef9e4bdfc01d23af1969aa90485d4cebb0b9638fa5ef1daef656f6c1b",
   "scripts": {
+    "build:dotnet": "dotnet build understand-anything-plugin/tools/dotnet-analyzer/DotNetAnalyzer.csproj -c Release --locked-mode",
+    "check:team": "node scripts/smoke-dotnet.mjs",
+    "analyze:dotnet": "node scripts/analyze-dotnet.mjs",
+    "dashboard:team": "node scripts/team-dashboard.mjs",
     "prepare": "pnpm --filter @understand-anything/core build",
     "build": "pnpm -r build",
     "test": "vitest run",

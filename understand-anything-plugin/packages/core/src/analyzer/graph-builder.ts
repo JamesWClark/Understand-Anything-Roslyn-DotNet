@@ -11,6 +11,7 @@ import type {
   SectionInfo,
 } from "../types.js";
 import { LanguageRegistry } from "../languages/language-registry.js";
+import { createHash } from "node:crypto";
 
 interface FileMeta {
   summary: string;
@@ -107,6 +108,10 @@ export class GraphBuilder {
     analysis: StructuralAnalysis,
     meta: FileAnalysisMeta,
   ): void {
+    if (analysis.dotNet) {
+      this.addDotNetFile(filePath, analysis, meta);
+      return;
+    }
     const lang = this.detectLanguage(filePath);
     if (lang !== "unknown") {
       this.languages.add(lang);
@@ -173,6 +178,65 @@ export class GraphBuilder {
         direction: "forward",
         weight: 1,
       });
+    }
+  }
+
+  private addDotNetFile(filePath: string, analysis: StructuralAnalysis, meta: FileAnalysisMeta): void {
+    const facts = analysis.dotNet!;
+    this.addFile(filePath, { ...meta, summary: meta.fileSummary });
+    const fileId = `file:${filePath}`;
+    const typeKinds = new Set(["class", "module", "struct", "interface", "record", "enum"]);
+    const key = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 24);
+    const typeId = (identity: string) => `dotnet-type:${key(facts.context.projectIdentity + "|" + (filePath.toLowerCase().endsWith(".vb") ? identity.toLowerCase() : identity))}`;
+    const declarationIds = new Map<string, string>();
+    const contains = (source: string, target: string) => {
+      const edgeKey = `contains|${source}|${target}`;
+      if (this.edgeKeys.has(edgeKey)) return;
+      this.edgeKeys.add(edgeKey);
+      this.edges.push({ source, target, type: "contains", direction: "forward", weight: 1 });
+    };
+    for (const declaration of facts.declarations) {
+      const isType = typeKinds.has(declaration.kind);
+      const id = isType ? typeId(declaration.typeIdentity) : `dotnet-member:${key(filePath + "|" + declaration.identity)}`;
+      declarationIds.set(declaration.identity, id);
+      if (!this.nodeIds.has(id)) {
+        this.nodeIds.add(id);
+        this.nodes.push({
+          id, type: isType ? "class" : ["method", "constructor", "operator", "delegate"].includes(declaration.kind) ? "function" : "resource",
+          name: declaration.name, filePath, lineRange: declaration.lineRange,
+          summary: meta.summaries[declaration.name] ?? `${declaration.kind}: ${declaration.signature}`,
+          tags: ["dotnet", declaration.kind, "syntax-only", ...(declaration.withEvents ? ["with-events"] : [])],
+          complexity: meta.complexity,
+          languageNotes: [declaration.typeIdentity, ...declaration.baseTypes.map(base => `Base/interface syntax: ${base}`),
+            facts.syntaxStatus === "complete" ? "Syntax parsed; semantic binding not performed." : "Recovered syntax; declarations may be incomplete."].join("\n"),
+        });
+      } else if (isType) {
+        const existing = this.nodes.find(node => node.id === id)!;
+        if (/\.designer\./i.test(existing.filePath ?? "") && !/\.designer\./i.test(filePath)) {
+          existing.filePath = filePath;
+          existing.lineRange = declaration.lineRange;
+        }
+      }
+      contains(fileId, id);
+    }
+    for (const declaration of facts.declarations) {
+      const parent = typeId(declaration.containingTypeIdentity);
+      const child = declarationIds.get(declaration.identity)!;
+      if (parent !== child && this.nodeIds.has(parent)) contains(parent, child);
+    }
+    for (const event of facts.events) {
+      const handler = facts.declarations.find(declaration => declaration.name === event.handler && declaration.owner === event.owner
+        && declaration.lineRange[0] <= event.line && declaration.lineRange[1] >= event.line);
+      if (!handler) continue;
+      const eventId = `dotnet-event:${key(facts.context.projectIdentity + "|" + handler.containingTypeIdentity + "|" + event.receiver + "." + event.eventName)}`;
+      if (!this.nodeIds.has(eventId)) {
+        this.nodeIds.add(eventId);
+        this.nodes.push({ id: eventId, type: "concept", name: `${event.receiver}.${event.eventName}`, filePath,
+          lineRange: [event.line, event.line], summary: "Event expression from a VB Handles clause; target is not semantically bound.",
+          tags: ["dotnet", "event", "syntax-only"], complexity: "simple" });
+      }
+      this.edges.push({ source: declarationIds.get(handler.identity)!, target: eventId, type: "subscribes", direction: "forward",
+        weight: 1, description: "Declared Handles relationship (syntax evidence, not runtime call order)." });
     }
   }
 

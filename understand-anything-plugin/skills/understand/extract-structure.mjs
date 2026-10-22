@@ -29,6 +29,7 @@ import {
   analyzeFileWithOutcomes,
   buildResult as buildExtractResult,
 } from './extract-structure-result.mjs';
+import { createAnalysisRegistry } from './create-analysis-registry.mjs';
 
 export {
   analyzeFileWithOutcomes,
@@ -55,8 +56,6 @@ try {
   core = await import(pathToFileURL(resolve(pluginRoot, 'packages/core/dist/index.js')).href);
 }
 
-const { TreeSitterPlugin, PluginRegistry, builtinLanguageConfigs, registerAllParsers } = core;
-
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -77,14 +76,7 @@ async function main() {
   }
 
   // Create tree-sitter plugin with all configs that have WASM grammars
-  const tsConfigs = builtinLanguageConfigs.filter(c => c.treeSitter);
-  const tsPlugin = new TreeSitterPlugin(tsConfigs);
-  await tsPlugin.init();
-
-  // Create registry and register tree-sitter + all non-code parsers
-  const registry = new PluginRegistry();
-  registry.register(tsPlugin);
-  registerAllParsers(registry);
+  const { registry } = await createAnalysisRegistry(core, projectRoot, batchFiles.map(file => file.path));
 
   const results = [];
   const filesSkipped = [];
@@ -134,6 +126,8 @@ async function main() {
 
     // Build result object
     const result = buildExtractResult(file, totalLines, nonEmptyLines, analysis, callGraph, batchImportData);
+    result.structureOutcome = structureOutcome;
+    result.callGraphOutcome = callGraphOutcome;
     results.push(result);
   }
 

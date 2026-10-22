@@ -44,6 +44,7 @@ import { dirname, resolve, join, posix, isAbsolute } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { createAnalysisRegistry } from './create-analysis-registry.mjs';
 
 /**
  * Read a list of files concurrently while preserving result order. Failures
@@ -86,8 +87,6 @@ try {
   // Fallback: direct path for installed plugin cache layouts
   core = await import(pathToFileURL(resolve(pluginRoot, 'packages/core/dist/index.js')).href);
 }
-
-const { TreeSitterPlugin, PluginRegistry, builtinLanguageConfigs, registerAllParsers } = core;
 
 // ---------------------------------------------------------------------------
 // Path helpers
@@ -2000,12 +1999,7 @@ async function main() {
   let treeSitterReady = false;
   const failures = [];
   try {
-    const tsConfigs = builtinLanguageConfigs.filter(c => c.treeSitter);
-    const tsPlugin = new TreeSitterPlugin(tsConfigs);
-    await tsPlugin.init();
-    registry = new PluginRegistry();
-    registry.register(tsPlugin);
-    registerAllParsers(registry);
+    ({ registry } = await createAnalysisRegistry(core, projectRoot, analysisFiles.map(file => file.path)));
     treeSitterReady = true;
   } catch (err) {
     failures.push({ path: null, stage: 'tree-sitter-init', message: err.message });

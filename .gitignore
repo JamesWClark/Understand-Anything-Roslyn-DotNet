@@ -19,3 +19,6 @@ venv/
 *.pyo
 Thumbs.db
 *.tgz
+**/bin/
+**/obj/
+understand-anything-plugin/tools/dotnet-analyzer/publish/

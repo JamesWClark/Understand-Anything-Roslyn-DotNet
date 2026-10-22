@@ -50,14 +50,8 @@ try {
   core = await import(pathToFileURL(resolve(pluginRoot, 'packages/core/dist/index.js')).href);
 }
 
-const {
-  TreeSitterPlugin,
-  PluginRegistry,
-  builtinLanguageConfigs,
-  registerAllParsers,
-  buildFingerprintStore,
-  saveFingerprints,
-} = core;
+const { buildFingerprintStore, saveFingerprints } = core;
+import { createAnalysisRegistry } from './create-analysis-registry.mjs';
 
 async function main() {
   const [, , inputPath] = process.argv;
@@ -81,15 +75,7 @@ async function main() {
   // Create tree-sitter plugin with all configs that have WASM grammars,
   // mirroring extract-structure.mjs so the baseline matches the comparison
   // logic used during auto-updates.
-  const tsConfigs = builtinLanguageConfigs.filter((c) => c.treeSitter);
-  const tsPlugin = new TreeSitterPlugin(tsConfigs);
-  await tsPlugin.init();
-
-  const registry = new PluginRegistry();
-  registry.register(tsPlugin);
-  registerAllParsers(registry);
-
-  const structuralFingerprintLanguages = new Set(tsConfigs.map(config => config.id));
+  const { registry, structuralFingerprintLanguages } = await createAnalysisRegistry(core, projectRoot, filePaths);
   const store = buildFingerprintStore(projectRoot, filePaths, registry, gitCommitHash, {
     structuralFingerprintLanguages,
   });
