@@ -83,6 +83,10 @@ if (!graphDir) {
   process.exit(1);
 }
 
+if (process.env.UA_SOURCE_ROOT) {
+  projectRoot = fs.realpathSync(process.env.UA_SOURCE_ROOT);
+}
+
 const ACCESS_TOKEN = process.env.UNDERSTAND_ACCESS_TOKEN || crypto.randomBytes(16).toString("hex");
 
 // ── Helpers (mirroring vite.config.ts) ────────────────────────────────────

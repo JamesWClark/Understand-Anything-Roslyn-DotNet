@@ -134,6 +134,7 @@ const LANGUAGE_BY_EXT = Object.freeze({
   '.sc': 'scala',
   '.sbt': 'scala',
   '.cs': 'csharp',
+  '.vb': 'vbnet',
   '.swift': 'swift',
   '.lua': 'lua',
   // Ruby / PHP
@@ -200,6 +201,7 @@ const LANGUAGE_BY_EXT = Object.freeze({
   // .NET project files (mapped to extension-derived ids; downstream
   // treats them as config — see CATEGORY_BY_EXT)
   '.csproj': 'csproj',
+  '.vbproj': 'vbproj',
   '.sln': 'sln',
   '.properties': 'properties',
   '.mod': 'mod',
@@ -318,6 +320,8 @@ const CATEGORY_BY_EXT = Object.freeze({
   '.env': 'config',
   '.properties': 'config',
   '.csproj': 'config',
+  '.vbproj': 'config',
+  '.resx': 'config',
   '.sln': 'config',
   '.mod': 'config',
   '.sum': 'config',

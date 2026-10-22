@@ -64,9 +64,8 @@ describe('skill command hardening', () => {
     expect(content).toMatch(/: "\$\{DASHBOARD_DIR:\?Run step 5 first so DASHBOARD_DIR is set\}"/);
     expect(content).toMatch(/cd "\$PLUGIN_ROOT" && pnpm --filter @understand-anything\/core build/);
     expect(content).toMatch(/cd "\$DASHBOARD_DIR" && GRAPH_DIR="\$PROJECT_DIR" npx vite/);
-    // Fast path: the viewer URL is version-pinned and both npx arguments are quoted.
-    expect(content).toMatch(/VIEWER_URL="https:\/\/github\.com\/Egonex-AI\/Understand-Anything\/releases\/download\/v\$\{PLUGIN_VERSION\}\/understand-anything-viewer\.tgz"/);
-    expect(content).toMatch(/npx --yes "\$VIEWER_URL" "\$PROJECT_DIR"/);
+    expect(content).toMatch(/node "\$PLUGIN_ROOT\/\.\.\/scripts\/team-dashboard\.mjs" --project-root "\$PROJECT_DIR" --output-root "\$PROJECT_DIR"/);
+    expect(content).not.toMatch(/VIEWER_URL=.*Egonex-AI/);
   });
 
   it('marks project-controlled context as untrusted data', () => {

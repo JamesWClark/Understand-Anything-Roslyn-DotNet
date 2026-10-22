@@ -44,6 +44,8 @@ Throughout execution, report progress to the user at each phase transition and d
 
 Determine whether to run a full analysis or incremental update.
 
+For this team fork, verify setup with `scripts/setup-team.ps1 -Check` from the fork checkout before analyzing VB.NET. Roslyn provides syntax facts, not project-wide semantic binding. Never restore/build/evaluate the analyzed application's MSBuild projects without permission. The external structural pilot described in TEAM_SETUP.md is separate from this skill's project-local graph. For VB symbol changes that strict incremental evidence cannot validate, use a full analysis rather than treating missing symbols as verified deletions. Use only an approved model provider for proprietary code.
+
 1. **Resolve `PROJECT_ROOT`:**
    - Parse `$ARGUMENTS` for a non-flag token (any argument that does not start with `--`). If found, treat it as the target directory path.
      - If the path is relative, resolve it against the current working directory.
