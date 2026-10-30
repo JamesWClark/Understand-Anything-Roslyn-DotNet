@@ -1,5 +1,6 @@
-import ELK from "elkjs/lib/elk.bundled.js";
+import type { ELK as ElkInstance } from "elkjs/lib/elk-api.js";
 import type { GraphIssue } from "@understand-anything/core/schema";
+import elkWorkerUrl from "elkjs/lib/elk-worker.min.js?url";
 import { NODE_WIDTH, NODE_HEIGHT } from "./layout";
 
 export interface ElkChild {
@@ -211,7 +212,17 @@ export function repairElkInput(
   };
 }
 
-const elk = new ELK();
+let elkPromise: Promise<ElkInstance> | undefined;
+
+function getElk(): Promise<ElkInstance> {
+  elkPromise ??= import.meta.env.SSR
+    ? import("elkjs/lib/elk.bundled.js").then(({ default: ELK }) => new ELK())
+    : import("elkjs/lib/elk-api.js").then(
+        ({ default: ELK }) =>
+          new ELK({ workerFactory: () => new Worker(elkWorkerUrl) }),
+      );
+  return elkPromise;
+}
 
 export interface ElkLayoutOptions {
   strict?: boolean;
@@ -228,6 +239,7 @@ export async function applyElkLayout(
 ): Promise<ElkLayoutResult> {
   const { input: repaired, issues } = repairElkInput(input, opts);
   try {
+    const elk = await getElk();
     const positioned = (await elk.layout(repaired as never)) as ElkInput;
     return { positioned, issues };
   } catch (err) {

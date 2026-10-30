@@ -49,6 +49,7 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "@tree-sitter-grammars/tree-sitter-kotlin",
       "esbuild",
       "sharp",
       "tree-sitter-c",
