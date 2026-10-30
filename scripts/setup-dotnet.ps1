@@ -4,13 +4,15 @@ param(
     [switch]$Check,
     [switch]$Uninstall,
     [switch]$ReplaceLinks,
-    [switch]$NoSkills
+    [switch]$NoSkills,
+    [string]$HomeRoot = $HOME
 )
 
 $ErrorActionPreference = 'Stop'
+$HomeRoot = [IO.Path]::GetFullPath($HomeRoot)
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $PluginRoot = Join-Path $RepoRoot 'understand-anything-plugin'
-$StateRoot = Join-Path $HOME '.understand-anything-roslyn-dotnet'
+$StateRoot = Join-Path $HomeRoot '.understand-anything-roslyn-dotnet'
 $ManifestPath = Join-Path $StateRoot 'links.json'
 $Package = Get-Content -LiteralPath (Join-Path $RepoRoot 'package.json') -Raw | ConvertFrom-Json
 $PnpmVersion = (($Package.packageManager -split '@')[1] -split '\+')[0]
@@ -87,9 +89,9 @@ try {
     if (-not $Check -and -not $NoSkills) {
         $SkillsRoot = Join-Path $PluginRoot 'skills'
         foreach ($Skill in Get-ChildItem -LiteralPath $SkillsRoot -Directory) {
-            Set-CopilotLink (Join-Path $HOME ".copilot\skills\$($Skill.Name)") $Skill.FullName
+            Set-CopilotLink (Join-Path $HomeRoot ".copilot\skills\$($Skill.Name)") $Skill.FullName
         }
-        Set-CopilotLink (Join-Path $HOME '.understand-anything-plugin') $PluginRoot
+        Set-CopilotLink (Join-Path $HomeRoot '.understand-anything-plugin') $PluginRoot
     }
     if ($ProjectRoot) {
         $ResolvedProject = (Resolve-Path -LiteralPath $ProjectRoot).Path
