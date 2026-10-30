@@ -14,11 +14,11 @@ This checkout is the plugin fork. Never install a separate upstream plugin or su
 - Treat `/sync-upstream` without restrictive arguments as a request to begin the guided sync, not as permission to merge or push.
 - Parse explicit user constraints. “Assess only”, “do not merge”, or “do not push” remain in force for the whole run.
 - Use `vscode_askQuestions` for decision gates when available. Ask one gate at a time, show a recommended option when evidence supports one, and explain what each option does.
-- Every choice prompt must list all relevant concrete actions, then end with **Something else / custom response** as the final visible option. The number of concrete options varies by decision; do not force exactly three total. Set `allowFreeformInput: true` so the user can type a different instruction. Never treat a custom response as approval for merge, promotion, push, dependency script execution, or another gated action unless the user clearly says so.
+- Every choice prompt must list only the relevant concrete actions; do not add a separate custom-response option. Keep the question's freeform response field enabled with `allowFreeformInput: true`, so the user can type an alternative there. Never treat freeform text as approval for merge, promotion, push, dependency script execution, or another gated action unless the user clearly says so.
 - Use this shape for each question:
 
    ```text
-   options: [relevant concrete actions..., "Something else / custom response"]
+   options: [relevant concrete actions...]
    allowFreeformInput: true
    ```
 - After every completed stage, report what changed and offer the next decision. If the user pauses, leave the current branch/worktree in a clearly reported resumable state; on a later invocation, inspect Git state and resume rather than starting over.
@@ -34,7 +34,7 @@ This checkout is the plugin fork. Never install a separate upstream plugin or su
    git branch --show-current
    ```
 
-   If a merge, rebase, or cherry-pick is already in progress, stop and explain the state. If the worktree is dirty, do not fetch or switch. Report the changed paths and ask whether to stop until the user preserves them, assess only already-fetched refs and label the result potentially stale, or provide a custom response. Put **Something else / custom response** last. Never commit or stash for the user.
+   If a merge, rebase, or cherry-pick is already in progress, stop and explain the state. If the worktree is dirty, do not fetch or switch. Report the changed paths and offer stopping until the user preserves them or assessing only already-fetched refs with a stale-result warning. Keep freeform enabled for another instruction. Never commit or stash for the user.
 
 2. Verify remotes:
 
@@ -42,7 +42,7 @@ This checkout is the plugin fork. Never install a separate upstream plugin or su
    git remote -v
    ```
 
-   `origin` should be `https://github.com/JamesWClark/Understand-Anything-Roslyn-DotNet.git`; `upstream` should be `https://github.com/Egonex-AI/Understand-Anything.git`. If a remote is missing or stale, verify the intended URL with `git ls-remote` first, then ask whether to update it to the verified URL, leave it unchanged and stop, or provide a custom response. Put **Something else / custom response** last. Do not change remote configuration before this choice.
+   `origin` should be `https://github.com/JamesWClark/Understand-Anything-Roslyn-DotNet.git`; `upstream` should be `https://github.com/Egonex-AI/Understand-Anything.git`. If a remote is missing or stale, verify the intended URL with `git ls-remote` first, then offer updating it to the verified URL or leaving it unchanged and stopping. Keep freeform enabled. Do not change remote configuration before the user chooses.
 
 3. Confirm local `main` exists. If clean and remotes are correct, refresh refs:
 
@@ -99,7 +99,8 @@ After presenting the assessment, use `vscode_askQuestions` and ask the user to c
 
 - **Create sync branch and integrate**: proceed to Stage 3.
 - **Stop after assessment**: make no branch or source changes.
-- **Something else / custom response**: enable freeform input and follow the user's alternative instruction.
+
+Keep the question's freeform response field enabled for alternatives.
 
 If the user explicitly requested assessment-only or prohibited merging, report the findings and stop without offering integration as an action to take now.
 
@@ -108,7 +109,7 @@ If the user explicitly requested assessment-only or prohibited merging, report t
 Only after the user selects integration:
 
 1. Recheck that the worktree is clean and no Git operation is in progress.
-2. Compare `main` with `origin/main`. If local `main` is only behind, ask whether to fast-forward it before branching or stop and leave it unchanged, followed by the custom-response option. If branches diverged or local commits are unpublished, explain the divergence and offer the safe base choices needed for that situation, followed by **Something else / custom response**; do not discard or rebase those commits.
+2. Compare `main` with `origin/main`. If local `main` is only behind, offer fast-forwarding it before branching or stopping with it unchanged. If branches diverged or local commits are unpublished, explain the divergence and offer safe base choices for that situation; do not discard or rebase those commits. Keep freeform enabled for an alternative.
 3. Create a unique `sync/upstream-<timestamp>` branch from the agreed fork `main` base.
 4. Merge `upstream/main` with a merge commit:
 
@@ -116,8 +117,8 @@ Only after the user selects integration:
    git merge --no-ff upstream/main
    ```
 
-5. Resolve clear mechanical conflicts by preserving both changes and inspect the full result. Never choose `ours` or `theirs` for an entire file. If analyzer ownership, graph schema, fingerprint semantics, or any other behavior is ambiguous, present the concrete resolutions needed with `vscode_askQuestions`, then append **Something else / custom response** as the final option. Wait for the user's choice.
-6. If the user chooses to pause or stop during a conflict, do not abort or discard the merge state automatically. Ask whether to resume conflict resolution or keep the merge paused, then append **Something else / custom response**. Aborting requires explicit confirmation.
+5. Resolve clear mechanical conflicts by preserving both changes and inspect the full result. Never choose `ours` or `theirs` for an entire file. If analyzer ownership, graph schema, fingerprint semantics, or any other behavior is ambiguous, present the concrete resolutions needed with `vscode_askQuestions` and wait for the user's choice. Keep freeform enabled; do not add a duplicate custom option.
+6. If the user chooses to pause or stop during a conflict, do not abort or discard the merge state automatically. Offer resuming conflict resolution or keeping the merge paused, with freeform enabled for another instruction. Aborting requires explicit confirmation.
 
 ## Stage 4: Validate the Integration
 
@@ -131,9 +132,9 @@ npx --yes pnpm@10.6.2 --filter @understand-anything/core test
 npx --yes pnpm@10.6.2 test
 ```
 
-Do not run `pnpm approve-builds` or allow dependency scripts broadly. If install/setup asks to remove and recreate `node_modules`, ask whether to proceed or cancel, then append **Something else / custom response**. Approve only a specifically reviewed dependency script, and keep the workspace policy consistent with pinned pnpm 10.6.2. If a dependency approval prompt appears, identify the exact package and ask before approving it, again putting the custom-response option last.
+Do not run `pnpm approve-builds` or allow dependency scripts broadly. If install/setup asks to remove and recreate `node_modules`, ask whether to proceed or cancel and leave freeform enabled. Approve only a specifically reviewed dependency script, and keep the workspace policy consistent with pinned pnpm 10.6.2. If a dependency approval prompt appears, identify the exact package and ask before approving it; leave freeform enabled without adding a separate custom option.
 
-If a gate fails, inspect the cause. Fix and rerun clearly integration-related defects when the repair is local and unambiguous. For ambiguous failures, unrelated baseline failures, or dependency/environment problems, report the exact failure and use `vscode_askQuestions` to offer the relevant concrete next steps, followed by **Something else / custom response**; do not promote an unvalidated merge. Treat non-fatal build warnings separately from failed gates.
+If a gate fails, inspect the cause. Fix and rerun clearly integration-related defects when the repair is local and unambiguous. For ambiguous failures, unrelated baseline failures, or dependency/environment problems, report the exact failure and use `vscode_askQuestions` to offer relevant concrete next steps with freeform enabled; do not promote an unvalidated merge. Treat non-fatal build warnings separately from failed gates.
 
 ### Decision 2: Promote to Local `main`?
 
@@ -141,7 +142,8 @@ After validation, report test results and use `vscode_askQuestions` to ask:
 
 - **Keep the validated sync branch** for later review.
 - **Fast-forward local `main`** to the validated sync branch.
-- **Something else / custom response**: enable freeform input and follow the user's alternative instruction.
+
+Keep the question's freeform response field enabled for alternatives.
 
 Do not switch or merge into `main` until the user chooses promotion. If local `main` or `origin/main` advanced during validation, re-check ancestry and ask how to proceed rather than forcing it.
 
@@ -150,9 +152,9 @@ Do not switch or merge into `main` until the user chooses promotion. If local `m
 After local promotion—or if the user explicitly requests a push from the validated branch—ask separately whether to push. Before pushing:
 
 1. Confirm the target remote is the fork's `origin` and the target branch is correct.
-2. Follow `CLAUDE.md`'s six-manifest synchronized version bump. If no version was specified, propose the next version and use `vscode_askQuestions` to offer confirming it, deferring the push, and **Something else / custom response** as the final option. Keep freeform input enabled.
+2. Follow `CLAUDE.md`'s six-manifest synchronized version bump. If no version was specified, propose the next version and use `vscode_askQuestions` to offer confirming it or deferring the push. Keep freeform input enabled for another version or instruction.
 3. Re-run affected build/tests after the version change and inspect the push diff.
-4. Use `vscode_askQuestions` for the final push choice: offer pushing to the verified fork branch, leaving the validated work local, and **Something else / custom response** as the final option. Keep freeform input enabled. Push only after an explicit yes. Never force-push.
+4. Use `vscode_askQuestions` for the final push choice: offer pushing to the verified fork branch or leaving the validated work local. Keep freeform input enabled for other instructions. Push only after an explicit yes. Never force-push.
 
 If the user declines, leave the validated local result in place and report its branch/commit. Never publish application source, generated graphs, credentials, or user-local config.
 
