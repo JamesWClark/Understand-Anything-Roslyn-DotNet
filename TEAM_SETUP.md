@@ -27,7 +27,7 @@ Set-Location Understand-Anything-Roslyn-DotNet
 
 Run these commands in PowerShell from the tool checkout, not from the application directory. If your organization blocks script execution, use its approved procedure; setup does not change execution policy or bypass administrator restrictions.
 
-Setup restores locked Node/NuGet dependencies, publishes the helper, builds core/skill/dashboard, runs synthetic smoke checks, and links skills under the current user's `.copilot/skills`. It never pulls Git changes or requests administrator elevation. Restart VS Code after installation. Keep the tool checkout at a stable path because the user-level skill links point into it.
+Setup restores locked Node/NuGet dependencies, publishes the helper, builds core/skill/dashboard, runs synthetic smoke checks, and links skills under the current user's `.copilot/skills`. It records the absolute setup-script path under `%USERPROFILE%\.understand-anything-roslyn-dotnet` for the `/understand` VB prerequisite check. It never pulls Git changes or requests administrator elevation. Restart VS Code after installation. Keep the tool checkout at a stable path because the user-level skill links point into it.
 
 If you rename or move the local checkout, rerun setup with `-ReplaceLinks` so the Copilot skill links point to its new path. Setup and standalone pilot state is stored under `%USERPROFILE%\.understand-anything-roslyn-dotnet`; it contains setup/link records and standalone pilot graphs, not application source.
 

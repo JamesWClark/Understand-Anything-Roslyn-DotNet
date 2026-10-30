@@ -44,7 +44,30 @@ Throughout execution, report progress to the user at each phase transition and d
 
 Determine whether to run a full analysis or incremental update.
 
-For this Roslyn-enabled fork, verify setup with `scripts/setup-dotnet.ps1 -Check` from the fork checkout before analyzing VB.NET. Roslyn provides syntax facts, not project-wide semantic binding. Never restore/build/evaluate the analyzed application's MSBuild projects without permission. The optional `scripts/analyze-dotnet.mjs` structural analyzer writes a separate graph from this skill's project-local graph. For VB symbol changes that strict incremental evidence cannot validate, use a full analysis rather than treating missing symbols as verified deletions. Use only an approved model provider for proprietary code.
+For this Roslyn-enabled fork, verify setup before analyzing VB.NET, but do not search the analyzed project for the setup script. Setup records its absolute path in `%USERPROFILE%\.understand-anything-roslyn-dotnet\setup-script-path.txt`; read that exact file and run the recorded script with `-Check`. If the record is missing or stale, resolve the fork only through the setup-created `%USERPROFILE%\.understand-anything-plugin` junction (plugin root; the fork root is its parent). If neither known path works, stop and ask the user to rerun setup from the fork checkout rather than searching other repositories.
+
+```powershell
+$SetupPathFile = Join-Path $env:USERPROFILE '.understand-anything-roslyn-dotnet\setup-script-path.txt'
+$SetupScript = $null
+if (Test-Path -LiteralPath $SetupPathFile) {
+  $SetupScript = (Get-Content -LiteralPath $SetupPathFile -Raw).Trim()
+}
+if (-not $SetupScript -or -not (Test-Path -LiteralPath $SetupScript -PathType Leaf)) {
+  $PluginLink = Join-Path $env:USERPROFILE '.understand-anything-plugin'
+  $PluginItem = Get-Item -LiteralPath $PluginLink -Force -ErrorAction SilentlyContinue
+  if ($PluginItem -and $PluginItem.LinkType -in @('Junction', 'SymbolicLink')) {
+    $PluginRoot = [string]@($PluginItem.Target)[0]
+    $SetupScript = Join-Path (Split-Path -Parent $PluginRoot) 'scripts\setup-dotnet.ps1'
+  }
+}
+if (-not $SetupScript -or -not (Test-Path -LiteralPath $SetupScript -PathType Leaf)) {
+  throw 'Cannot find the setup script from the known install paths. Rerun setup from the fork checkout.'
+}
+& $SetupScript -Check
+if ($LASTEXITCODE -ne 0) { throw 'Roslyn setup check failed.' }
+```
+
+Roslyn provides syntax facts, not project-wide semantic binding. Never restore/build/evaluate the analyzed application's MSBuild projects without permission. The optional `scripts/analyze-dotnet.mjs` structural analyzer writes a separate graph from this skill's project-local graph. For VB symbol changes that strict incremental evidence cannot validate, use a full analysis rather than treating missing symbols as verified deletions. Use only an approved model provider for proprietary code.
 
 1. **Resolve `PROJECT_ROOT`:**
    - Parse `$ARGUMENTS` for a non-flag token (any argument that does not start with `--`). If found, treat it as the target directory path.

@@ -109,6 +109,11 @@ try {
         Write-Host "Separate graph output: $OutputRoot"
         Write-Host "Analyze: node scripts/analyze-dotnet.mjs --project-root `"$ResolvedProject`" --output-root `"$OutputRoot`""
     }
+    if (-not $Check) {
+        New-Item -ItemType Directory -Path $StateRoot -Force | Out-Null
+        $SetupScriptPath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'setup-dotnet.ps1'))
+        Set-Content -LiteralPath (Join-Path $StateRoot 'setup-script-path.txt') -Value $SetupScriptPath -Encoding UTF8
+    }
     Write-Host 'Setup verified. Restart VS Code after linking skills. Use node scripts/dotnet-dashboard.mjs after generating a graph.'
 } finally {
     Pop-Location
