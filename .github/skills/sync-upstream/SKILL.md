@@ -22,8 +22,17 @@ This checkout is the plugin fork. Never install a separate upstream plugin or su
    allowFreeformInput: true
    ```
 - After every completed stage, report what changed and offer the next decision. If the user pauses, leave the current branch/worktree in a clearly reported resumable state; on a later invocation, inspect Git state and resume rather than starting over.
-- Do routine read-only work autonomously. Never stash, discard, reset, amend, force-push, or overwrite user changes. A merge commit on the approved sync branch is allowed only after the user selects integration.
+- Do routine read-only work autonomously. Never stash, discard, reset, amend, force-push, or overwrite user changes. A merge commit on the approved sync branch is allowed only after the user selects integration. After validation, a separate commit containing only the changelog record is allowed as described below; never include unrelated or user changes.
 - Fetching updates remote-tracking refs only. Explain that it does not merge code.
+
+## Verified Changelog and Rollback Tags
+
+- `CHANGELOG.md` is the source of truth for the latest verified code commit. Read its newest entry during preflight and confirm the tag resolves to the recorded full commit hash with `git rev-parse <tag>^{}`.
+- Keep annotated verification tags immutable and local unless the user explicitly approves pushing. Never move or delete an earlier verification tag; choose a unique name if one already exists.
+- For a new changelog with no verified entry, bootstrap only from a commit the user identifies as working. Create an annotated tag on that exact commit and record its full hash, tag, branch, and how verification was established. Label user-confirmed baselines accurately; do not imply tests were run when they were not.
+- After the required validation passes, tag the exact tested code commit before making changelog-only commits. Use `verified-main-YYYY-MM-DD` for a main baseline and `verified-sync-YYYY-MM-DD-<short-hash>` for a validated sync. Confirm the tag peels to the tested commit, then add a newest-first entry to `CHANGELOG.md` with the full hash, tag, summary, and the focused checks and results. Preserve prior entries as rollback history.
+- If validation fails or remains incomplete, do not create a new verified tag or replace the latest known-good entry. Keep the existing rollback anchor and report the failure or gap.
+- A changelog-only commit may follow the annotated tag; the tag intentionally identifies the tested code state, while the entry records that state. Do not tag the changelog-recording commit as verified unless its code was also validated.
 
 ## Stage 1: Preflight
 
@@ -64,13 +73,13 @@ git diff --stat main...upstream/main
 git diff --name-status main...upstream/main
 ```
 
-Read each upstream commit and inspect the changed code and tests, including renames and deletions. Compare changed paths against fork-only changes. Run a non-mutating merge simulation:
+Assess proportionally to the changed paths; commit count alone is not a risk score. For each changed path, inspect the relevant code/tests and nearest owning abstraction, including renames and deletions, and compare with fork-only changes. Do not re-audit the entire Roslyn pipeline unless the delta touches or depends on it. Run a non-mutating merge simulation:
 
 ```text
 git merge-tree --write-tree main upstream/main
 ```
 
-Report the commit counts, upstream changes, overlapping files, predicted textual conflicts, behavioral risks, and the next validation steps. A clean merge simulation is not proof of behavioral compatibility.
+For a small localized delta with no Roslyn-sensitive overlap and a clean merge simulation, give a concise assessment of the changed paths, direct risks, and focused tests. Recommend the fast path: merge only after the user chooses, then run those focused checks without the full root suite or unrelated Roslyn gates. Widen review and validation when shared contracts, cross-cutting workflows, Roslyn ownership, or focused failures warrant it. A clean merge simulation is not proof of behavioral compatibility.
 
 Inspect these fork integration points when relevant:
 
@@ -91,7 +100,7 @@ For upstream VB.NET/.NET support, explicitly check:
 - Whether incremental fingerprints preserve conservative VB handling. Never interpret missing VB symbols as confirmed deletions unless a validator supports that conclusion.
 - Whether tests cover provider selection, VB graph construction, partial/designer declarations, recovered syntax, incremental changes, and standalone analysis as applicable.
 
-Also review general contract changes in graph schema, language defaults, imports, and manifests. Compare all six versioned manifests with the upstream result; `CLAUDE.md` lists them.
+Review only directly affected general contracts such as graph schema, language defaults, imports, or manifests. Compare versioned manifests when metadata changes; check all six before a push as `CLAUDE.md` requires.
 
 ### Decision 1: Integrate?
 
@@ -122,7 +131,21 @@ Only after the user selects integration:
 
 ## Stage 4: Validate the Integration
 
-Inspect the complete merge diff and add/update focused tests for changed behavior. Run the relevant focused tests first, then the normal fork gates as applicable:
+Inspect the merge diff and add/update focused tests for changed behavior. Select validation from the changed paths; do not run the full root suite by default for a small localized delta.
+
+Typical focused checks:
+
+| Upstream change | Focused validation |
+| --- | --- |
+| Python import resolution | `npx --yes pnpm@10.6.2 exec vitest run tests/skill/understand/test_extract_import_map.test.mjs -t "Python resolver"` |
+| Makefile parsing | `npx --yes pnpm@10.6.2 --filter @understand-anything/core exec vitest run src/__tests__/parsers.test.ts -t "MakefileParser"` |
+| Package/plugin version metadata only | Verify the six versioned manifests are aligned and valid JSON; no analysis test is needed solely for a version string. |
+| Shared core APIs, parser registry, or graph schema | Core build and core test suite. |
+| Roslyn provider, helper, graph conversion, or incremental fingerprints | `build:dotnet`, `check:dotnet`, and focused Roslyn/incremental tests. |
+
+Run the full root suite only when changes span interacting workflows, focused tests indicate broader risk, a release/CI gate requires it, or the user requests it. This suite includes subprocess-heavy temporary-repository tests and can take several minutes; do not impose it automatically on a small import/parser fix.
+
+When changes are cross-cutting or focused checks reveal wider impact, use the normal fork gates as applicable:
 
 ```text
 npx --yes pnpm@10.6.2 build:dotnet
@@ -131,6 +154,8 @@ npx --yes pnpm@10.6.2 check:dotnet
 npx --yes pnpm@10.6.2 --filter @understand-anything/core test
 npx --yes pnpm@10.6.2 test
 ```
+
+After all required checks pass, tag the exact tested code commit and add the changelog entry using `Verified Changelog and Rollback Tags` above. Commit only `CHANGELOG.md` as a separate changelog-recording commit on the approved sync branch before asking whether to promote to local `main`; this keeps the tag on the tested code commit. If unrelated working-tree changes are present, leave them untouched and ask before committing or promoting. The entry must distinguish passed checks from checks not run.
 
 Do not run `pnpm approve-builds` or allow dependency scripts broadly. If install/setup asks to remove and recreate `node_modules`, ask whether to proceed or cancel and leave freeform enabled. Approve only a specifically reviewed dependency script, and keep the workspace policy consistent with pinned pnpm 10.6.2. If a dependency approval prompt appears, identify the exact package and ask before approving it; leave freeform enabled without adding a separate custom option.
 
@@ -154,7 +179,8 @@ After local promotion—or if the user explicitly requests a push from the valid
 1. Confirm the target remote is the fork's `origin` and the target branch is correct.
 2. Follow `CLAUDE.md`'s six-manifest synchronized version bump. If no version was specified, propose the next version and use `vscode_askQuestions` to offer confirming it or deferring the push. Keep freeform input enabled for another version or instruction.
 3. Re-run affected build/tests after the version change and inspect the push diff.
-4. Use `vscode_askQuestions` for the final push choice: offer pushing to the verified fork branch or leaving the validated work local. Keep freeform input enabled for other instructions. Push only after an explicit yes. Never force-push.
+   Because the version bump changes the verified commit, create a new annotated verification tag and changelog entry for the final tested commit; preserve the earlier tag as a rollback point.
+4. Use `vscode_askQuestions` for the final push choice: offer pushing the verified fork branch with its current verification tag or leaving the validated work local. Keep freeform input enabled for other instructions. Push branch and tag only after an explicit yes. Never force-push or retarget an existing tag.
 
 If the user declines, leave the validated local result in place and report its branch/commit. Never publish application source, generated graphs, credentials, or user-local config.
 
