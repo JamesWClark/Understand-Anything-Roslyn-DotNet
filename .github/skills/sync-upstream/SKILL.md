@@ -7,7 +7,7 @@ description: Assess and safely integrate upstream Understand Anything changes in
 
 Use this skill from the Understand-Anything-Roslyn-DotNet checkout when reviewing changes from Egonex AI's upstream repository. The goal is to keep the fork current without losing its Roslyn integration or silently changing how VB.NET and C# are analyzed.
 
-This repository is the plugin fork. Do not install a separate upstream plugin or substitute upstream build artifacts. Read `CLAUDE.md` and `DOTNET_SETUP.md` for current repository conventions and validation gates.
+This repository is the plugin fork. Do not install a separate upstream plugin or substitute upstream build artifacts. Read `CLAUDE.md` and `README.md` for current repository conventions and setup commands.
 
 ## Stage 1: Inspect Without Changing the Branch
 
