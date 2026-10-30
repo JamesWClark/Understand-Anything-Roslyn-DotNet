@@ -39,7 +39,11 @@ VB.NET files use Roslyn syntax analysis in `/understand`. C# uses tree-sitter by
 
 The setup, global Copilot skill linking, and integration smoke checks currently target **Windows + VS Code + GitHub Copilot**. Other editors are not currently supported or tested.
 
-Upstream assessment and sync guidance lives in the repo-local [sync-upstream skill](.github/skills/sync-upstream/SKILL.md). In Copilot Chat, run `/sync-upstream` to assess upstream changes; follow the skill for its safety gates.
+Upstream assessment and sync guidance lives in the repo-local [sync-upstream skill](.github/skills/sync-upstream/SKILL.md). In Copilot Chat, run:
+
+```text
+/sync-upstream Assess upstream/main, report what changed and any Roslyn/VB.NET risks, but do not merge or push.
+```
 
 ## Other Editor Support: TODO
 
