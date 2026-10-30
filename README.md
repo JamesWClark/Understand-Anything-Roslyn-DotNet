@@ -18,7 +18,7 @@ Set-Location Understand-Anything-Roslyn-DotNet
 .\scripts\setup-dotnet.ps1
 ```
 
-Setup builds the Roslyn helper and plugin, then links skills into `%USERPROFILE%\.copilot\skills`. It is a one-time per-user setup, not a VS Code extension and not a per-project install.
+Setup builds the Roslyn helper and plugin, then links skills into `%USERPROFILE%\.copilot\skills`. Pass `-HomeRoot <path>` to keep links and setup state under a different profile directory; it defaults to the current Windows profile. Build outputs remain in the checkout. Setup is a one-time per-user install, not a VS Code extension or per-project install.
 
 Open any codebase in VS Code, start Copilot Chat in agent mode, and run:
 

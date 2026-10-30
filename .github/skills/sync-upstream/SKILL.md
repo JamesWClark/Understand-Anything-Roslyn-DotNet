@@ -22,7 +22,7 @@ This checkout is the plugin fork. Never install a separate upstream plugin or su
    allowFreeformInput: true
    ```
 - After every completed stage, report what changed and offer the next decision. If the user pauses, leave the current branch/worktree in a clearly reported resumable state; on a later invocation, inspect Git state and resume rather than starting over.
-- Do routine read-only work autonomously. Never stash, discard, reset, amend, force-push, or overwrite user changes. A merge commit on the approved sync branch is allowed only after the user selects integration. After validation, a separate commit containing only the changelog record is allowed as described below; never include unrelated or user changes.
+- Do routine read-only work autonomously. Never stash, discard, reset, amend, commit, force-push, or overwrite user changes unless the user explicitly asks. A merge commit on the approved sync branch is allowed only after the user selects integration.
 - Fetching updates remote-tracking refs only. Explain that it does not merge code.
 
 ## Verified Changelog and Rollback Tags
@@ -73,15 +73,15 @@ git diff --stat main...upstream/main
 git diff --name-status main...upstream/main
 ```
 
-Assess proportionally to the changed paths; commit count alone is not a risk score. For each changed path, inspect the relevant code/tests and nearest owning abstraction, including renames and deletions, and compare with fork-only changes. Do not re-audit the entire Roslyn pipeline unless the delta touches or depends on it. Run a non-mutating merge simulation:
+Assess proportionally to the changed paths; commit count alone is not a risk score. For each changed path, inspect the relevant code/tests and nearest owning abstraction, including renames and deletions, and compare with fork-only paths to identify overlaps. Do not re-audit the entire Roslyn pipeline unless the delta touches or depends on it. Run a non-mutating merge simulation:
 
 ```text
 git merge-tree --write-tree main upstream/main
 ```
 
-For a small localized delta with no Roslyn-sensitive overlap and a clean merge simulation, give a concise assessment of the changed paths, direct risks, and focused tests. Recommend the fast path: merge only after the user chooses, then run those focused checks without the full root suite or unrelated Roslyn gates. Widen review and validation when shared contracts, cross-cutting workflows, Roslyn ownership, or focused failures warrant it. A clean merge simulation is not proof of behavioral compatibility.
+Report commit counts, changed paths, overlaps, predicted textual conflicts, behavioral risks, and the focused tests indicated by those paths. For a small localized delta with no Roslyn-sensitive overlap and a clean merge simulation, keep the assessment concise and recommend the fast path: after the user chooses integration, run only the affected tests, without the full root suite or unrelated Roslyn gates. Widen review and validation when shared contracts, cross-cutting workflows, Roslyn ownership, or focused failures warrant it. A clean merge simulation is not proof of behavioral compatibility.
 
-Inspect these fork integration points when relevant:
+Inspect these fork integration points only when upstream changes touch or depend on them:
 
 - `understand-anything-plugin/packages/core/src/plugins/dotnet-plugin.ts`
 - `understand-anything-plugin/packages/core/src/analyzer/graph-builder.ts`
@@ -100,7 +100,7 @@ For upstream VB.NET/.NET support, explicitly check:
 - Whether incremental fingerprints preserve conservative VB handling. Never interpret missing VB symbols as confirmed deletions unless a validator supports that conclusion.
 - Whether tests cover provider selection, VB graph construction, partial/designer declarations, recovered syntax, incremental changes, and standalone analysis as applicable.
 
-Review only directly affected general contracts such as graph schema, language defaults, imports, or manifests. Compare versioned manifests when metadata changes; check all six before a push as `CLAUDE.md` requires.
+Review only directly affected general contracts such as graph schema, language defaults, imports, or manifests. Compare versioned manifests when package/plugin metadata changes; check all six before a push as `CLAUDE.md` requires.
 
 ### Decision 1: Integrate?
 
@@ -120,11 +120,13 @@ Only after the user selects integration:
 1. Recheck that the worktree is clean and no Git operation is in progress.
 2. Compare `main` with `origin/main`. If local `main` is only behind, offer fast-forwarding it before branching or stopping with it unchanged. If branches diverged or local commits are unpublished, explain the divergence and offer safe base choices for that situation; do not discard or rebase those commits. Keep freeform enabled for an alternative.
 3. Create a unique `sync/upstream-<timestamp>` branch from the agreed fork `main` base.
-4. Merge `upstream/main` with a merge commit:
+4. For a whole-upstream sync, merge `upstream/main` with a merge commit. Prefer this over cherry-picking because it preserves ancestry and records the upstream base for the next sync:
 
    ```text
    git merge --no-ff upstream/main
    ```
+
+   Cherry-pick only when the user explicitly wants a subset of upstream commits. Prefer non-merge commits; cherry-picking upstream merge commits requires choosing a mainline parent and can make later syncs harder to reason about.
 
 5. Resolve clear mechanical conflicts by preserving both changes and inspect the full result. Never choose `ours` or `theirs` for an entire file. If analyzer ownership, graph schema, fingerprint semantics, or any other behavior is ambiguous, present the concrete resolutions needed with `vscode_askQuestions` and wait for the user's choice. Keep freeform enabled; do not add a duplicate custom option.
 6. If the user chooses to pause or stop during a conflict, do not abort or discard the merge state automatically. Offer resuming conflict resolution or keeping the merge paused, with freeform enabled for another instruction. Aborting requires explicit confirmation.
@@ -143,7 +145,7 @@ Typical focused checks:
 | Shared core APIs, parser registry, or graph schema | Core build and core test suite. |
 | Roslyn provider, helper, graph conversion, or incremental fingerprints | `build:dotnet`, `check:dotnet`, and focused Roslyn/incremental tests. |
 
-Run the full root suite only when changes span interacting workflows, focused tests indicate broader risk, a release/CI gate requires it, or the user requests it. This suite includes subprocess-heavy temporary-repository tests and can take several minutes; do not impose it automatically on a small import/parser fix.
+Run the full root suite only when changes span interacting workflows, focused tests indicate broader risk, a release/CI gate requires it, or the user requests it. It includes subprocess-heavy temporary-repository tests and can take several minutes; do not impose it automatically on a small import/parser fix.
 
 When changes are cross-cutting or focused checks reveal wider impact, use the normal fork gates as applicable:
 
@@ -155,7 +157,7 @@ npx --yes pnpm@10.6.2 --filter @understand-anything/core test
 npx --yes pnpm@10.6.2 test
 ```
 
-After all required checks pass, tag the exact tested code commit and add the changelog entry using `Verified Changelog and Rollback Tags` above. Commit only `CHANGELOG.md` as a separate changelog-recording commit on the approved sync branch before asking whether to promote to local `main`; this keeps the tag on the tested code commit. If unrelated working-tree changes are present, leave them untouched and ask before committing or promoting. The entry must distinguish passed checks from checks not run.
+After all required checks pass, tag the exact tested code commit and add the changelog entry using `Verified Changelog and Rollback Tags` above. Leave the changelog update uncommitted unless the user explicitly asks you to commit it; never include unrelated or user changes. The entry must distinguish passed checks from checks not run.
 
 Do not run `pnpm approve-builds` or allow dependency scripts broadly. If install/setup asks to remove and recreate `node_modules`, ask whether to proceed or cancel and leave freeform enabled. Approve only a specifically reviewed dependency script, and keep the workspace policy consistent with pinned pnpm 10.6.2. If a dependency approval prompt appears, identify the exact package and ask before approving it; leave freeform enabled without adding a separate custom option.
 
