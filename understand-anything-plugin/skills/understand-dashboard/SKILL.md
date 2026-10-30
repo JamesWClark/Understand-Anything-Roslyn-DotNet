@@ -100,15 +100,15 @@ Start the Understand Anything dashboard to visualize the knowledge graph for the
    DASHBOARD_DIR="$PLUGIN_ROOT/packages/dashboard"
    ```
 
-4. **Team fork: use the locally built dashboard.** Do not download an upstream release viewer for this fork. After running `scripts/setup-team.ps1` in the team checkout, launch:
+4. **Roslyn-enabled fork: use the locally built dashboard.** Do not download an upstream release viewer for this fork. After running `scripts/setup-dotnet.ps1` in the fork checkout, launch:
    ```bash
    : "${PLUGIN_ROOT:?Run step 3 first so PLUGIN_ROOT is set}"
    : "${PROJECT_DIR:?Run step 1 first so PROJECT_DIR is set}"
-    node "$PLUGIN_ROOT/../scripts/team-dashboard.mjs" --project-root "$PROJECT_DIR" --output-root "$PROJECT_DIR"
+    node "$PLUGIN_ROOT/../scripts/dotnet-dashboard.mjs" --project-root "$PROJECT_DIR" --output-root "$PROJECT_DIR"
    ```
    Run this in the background. It prints the same `🔑  Dashboard URL` line as the dev server:
    - If the line appears, **skip steps 5-6** and continue at step 7.
-    - If setup/build output is missing, run the team setup from the checkout; do not substitute upstream artifacts. Steps 5-6 describe a manual local-build fallback.
+    - If setup/build output is missing, run the fork setup from the checkout; do not substitute upstream artifacts. Steps 5-6 describe a manual local-build fallback.
 
 5. Fallback: install dependencies and build if needed:
    ```bash
@@ -147,7 +147,7 @@ Start the Understand Anything dashboard to visualize the knowledge graph for the
 
 ## Notes
 
-- The team launcher uses this checkout's locally built dashboard; it does not download an upstream viewer. For the external structural pilot saved by setup, run `node scripts/team-dashboard.mjs` from the team checkout without overriding its configured paths.
+- The fork launcher uses this checkout's locally built dashboard; it does not download an upstream viewer. For the external structural analysis saved by setup, run `node scripts/dotnet-dashboard.mjs` from the tool checkout without overriding its configured paths.
 - The dashboard auto-opens in the default browser (both the viewer and Vite's `--open`)
 - If port 5173 is already in use, the next available port is picked (both paths)
 - In the fallback, the `GRAPH_DIR` environment variable tells the dev server where to find the knowledge graph

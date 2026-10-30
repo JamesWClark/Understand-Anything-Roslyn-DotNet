@@ -89,7 +89,7 @@ export class DotNetPlugin implements AnalyzerPlugin {
     const toolRoot = fileURLToPath(new URL("../../../../tools/dotnet-analyzer/", import.meta.url));
     const helper = this.options.helperPath ?? process.env.UA_DOTNET_ANALYZER ??
       [resolve(toolRoot, "publish/DotNetAnalyzer.dll"), resolve(toolRoot, "bin/Release/net10.0/DotNetAnalyzer.dll")].find(path => existsSync(path));
-    if (!helper || !existsSync(helper)) throw new Error("Roslyn helper not built. Run scripts/setup-team.ps1 or pnpm build:dotnet.");
+    if (!helper || !existsSync(helper)) throw new Error("Roslyn helper not built. Run scripts/setup-dotnet.ps1 or pnpm build:dotnet.");
     for (let start = 0; start < selected.length; start += 32) {
       const files = selected.slice(start, start + 32).flatMap(path => {
         try {

@@ -9,7 +9,7 @@ import { spawn } from 'node:child_process';
 try {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   const { values } = parseArgs({ options: { 'project-root': { type: 'string' }, 'output-root': { type: 'string' }, port: { type: 'string' } } });
-  const configPath = join(homedir(), '.understand-anything-team', 'config.json');
+  const configPath = join(homedir(), '.understand-anything-roslyn-dotnet', 'config.json');
   const config = existsSync(configPath) ? JSON.parse(readFileSync(configPath, 'utf8').replace(/^\uFEFF/, '')) : {};
   const projectRoot = values['project-root'] ?? config.projectRoot;
   const outputRoot = values['output-root'] ?? config.outputRoot ?? projectRoot;

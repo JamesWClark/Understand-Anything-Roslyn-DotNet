@@ -64,7 +64,7 @@ describe('skill command hardening', () => {
     expect(content).toMatch(/: "\$\{DASHBOARD_DIR:\?Run step 5 first so DASHBOARD_DIR is set\}"/);
     expect(content).toMatch(/cd "\$PLUGIN_ROOT" && pnpm --filter @understand-anything\/core build/);
     expect(content).toMatch(/cd "\$DASHBOARD_DIR" && GRAPH_DIR="\$PROJECT_DIR" npx vite/);
-    expect(content).toMatch(/node "\$PLUGIN_ROOT\/\.\.\/scripts\/team-dashboard\.mjs" --project-root "\$PROJECT_DIR" --output-root "\$PROJECT_DIR"/);
+    expect(content).toMatch(/node "\$PLUGIN_ROOT\/\.\.\/scripts\/dotnet-dashboard\.mjs" --project-root "\$PROJECT_DIR" --output-root "\$PROJECT_DIR"/);
     expect(content).not.toMatch(/VIEWER_URL=.*Egonex-AI/);
   });
 

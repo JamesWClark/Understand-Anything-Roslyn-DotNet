@@ -1,8 +1,15 @@
-# Team Setup: VB.NET and C#
+# Understand Anything: Roslyn for .NET
 
-This fork adds a Roslyn syntax provider to Understand-Anything. VB uses Roslyn in the bundled analysis scripts. C# keeps its existing tree-sitter default; set `UA_DOTNET_CSHARP=1` to opt into Roslyn there. The standalone structural graph command uses Roslyn for both languages.
+This is a Roslyn-enabled fork of Understand Anything, not a .NET-only replacement. The normal `/understand` skill uses Roslyn syntax analysis for VB files; C# continues to use the existing tree-sitter provider by default, with Roslyn available by setting `UA_DOTNET_CSHARP=1`. The optional standalone structural graph command uses Roslyn for VB and C#.
 
-## Install on Windows
+There are two distinct ways to use the fork:
+
+- **Copilot skill:** the normal workflow for VB, Python, Node.js, and polyglot repos. Install the fork once, open any application repo in VS Code, and run `/understand`. Its graph is saved in that repo's `.ua/` directory (or existing `.understand-anything/`). Enrichment uses your configured AI provider and may send source to it; use an approved provider for proprietary code.
+- **Standalone .NET pilot:** an optional local-only structural graph for VB/C#. It does not use Copilot or generate LLM summaries.
+
+Setup installs and builds the tool; it does not analyze an application. `-ProjectRoot` is optional and only selects a default for the standalone pilot. You do not rerun setup when switching application repos.
+
+## Install Once on Windows
 
 Prerequisites: Git, Node.js 22 or newer with npm/npx, and a .NET 10.0.4xx SDK compatible with [global.json](global.json). Setup uses the repository-pinned pnpm through npx; global pnpm is not required. Downloads use the machine's configured npm/NuGet feeds. No ANTLR, Rust, Emscripten, or VB grammar compilation is required.
 
@@ -10,48 +17,54 @@ For Copilot explanations, also install VS Code and GitHub Copilot, sign in with 
 
 Clone or obtain the application source separately through your team's normal process. The tool fork does not include WIP or other proprietary application source. The paths and Signon filenames below are examples: substitute your own source checkout and files. You do not need to restore or build the application being analyzed.
 
-The implementation must be committed and pushed before another teammate can install it. Until it is merged into the fork's default branch, use the published feature branch below. These steps do not publish local changes automatically.
+The Roslyn implementation is merged into this fork's `main`. Clone the fork's default branch; the old `feature/roslyn-dotnet` branch is no longer needed for installation.
 
 ```powershell
-git clone --branch feature/roslyn-dotnet https://github.com/JamesWClark/Understand-Anything-Team.git
-Set-Location Understand-Anything-Team
-.\scripts\setup-team.ps1 -ProjectRoot 'C:\src\Cibar\GTS.Base\Cib\Wip'
+git clone https://github.com/JamesWClark/Understand-Anything-Roslyn-DotNet.git
+Set-Location Understand-Anything-Roslyn-DotNet
+.\scripts\setup-team.ps1
 ```
 
 Run these commands in PowerShell from the tool checkout, not from the application directory. If your organization blocks script execution, use its approved procedure; setup does not change execution policy or bypass administrator restrictions.
 
-Setup restores locked Node/NuGet dependencies, publishes the helper, builds core/skill/dashboard, runs synthetic smoke checks, and links skills under the current user's `.copilot/skills`. It never pulls Git changes or requests administrator elevation. Restart VS Code after installation.
+Setup restores locked Node/NuGet dependencies, publishes the helper, builds core/skill/dashboard, runs synthetic smoke checks, and links skills under the current user's `.copilot/skills`. It never pulls Git changes or requests administrator elevation. Restart VS Code after installation. Keep the tool checkout at a stable path because the user-level skill links point into it.
+
+If you rename or move the local checkout, rerun setup with `-ReplaceLinks` so the Copilot skill links point to its new path. Setup and standalone pilot state is stored under `%USERPROFILE%\.understand-anything-roslyn-dotnet`; it contains setup/link records and standalone pilot graphs, not application source.
+
+To analyze a project with Copilot, open that project's repo in VS Code and run:
+
+```text
+/understand --full
+/understand-dashboard
+```
+
+Use `--full` for the first graph. Later `/understand` runs are incremental by default. Repeat in each repo you want to analyze; no per-repo setup command is needed. VB files are routed to Roslyn automatically. Roslyn facts are syntax-only, not project-wide semantic binding, and the application is not restored or built.
 
 If an existing junction points to another installation, inspect it and rerun with `-ReplaceLinks` only when you intend to replace it. Previous targets are recorded for uninstall. Real directories are never replaced. Use `-NoSkills` to build without installing links.
 
-## Generate a Structural Graph
+## Optional: Standalone .NET Structural Graph
 
-Use the source/output paths printed by setup. The output directory is under the current user's `.understand-anything-team/projects`, separate from WIP. Start with a small form and include its designer:
+Use this only when you want a local structural graph without Copilot enrichment. Choose an output folder outside the application repo. For example, analyze one form and its designer:
 
 ```powershell
-node scripts/analyze-dotnet.mjs --project-root 'C:\src\Cibar\GTS.Base\Cib\Wip' `
-  --output-root 'C:\path\printed\by\setup' `
+$project = 'C:\src\Cibar\GTS.Base\Cib\Wip'
+$output = Join-Path $HOME '.understand-anything-roslyn-dotnet\projects\cibar-wip'
+node scripts/analyze-dotnet.mjs --project-root $project --output-root $output `
   --include Signon.vb --include Signon.Designer.vb
-node scripts/team-dashboard.mjs
+node scripts/team-dashboard.mjs --project-root $project --output-root $output
 ```
 
-The dashboard prints a tokenized localhost URL. Its source viewer reads the actual source checkout, confined to paths present in the graph. No application code is executed. Use `--port 5174` if needed; Vite also chooses another port when the requested one is occupied.
+Omit the `--include` arguments to recursively analyze all `.vb` and `.cs` files under the selected root, honoring ignore rules and skipping symlinks. For multiple independent projects, use a separate output folder for each and pass the matching source/output paths to both commands. The dashboard prints a tokenized localhost URL. Its source viewer reads the source checkout, confined to paths present in the graph. No application code is executed. Use `--port 5174` if needed; Vite also chooses another port when the requested one is occupied.
 
-For the first-run check, confirm the synthetic smoke test passes during setup, the selected files appear under **Files**, and double-click a file to open its source. Use the URL printed on your machine, not another user's tokenized URL. Keep the dashboard terminal running; press Ctrl+C to stop it.
+The analyzer refuses to overwrite an existing graph unless `--force` is supplied. Avoid `--force` if you want to keep that graph. Setup's optional `-ProjectRoot` argument only saves a default project/output folder for `team-dashboard.mjs`; it is not required for Copilot use or for the explicit commands above.
 
-On later days, return to the tool checkout and run `node scripts/team-dashboard.mjs`; it reopens the last configured project's saved graph. Source edits do not automatically regenerate that graph. Rerun the analysis command when needed, observing the overwrite warning below. To switch projects, rerun setup with the new `-ProjectRoot`; only the selected default changes, and previously generated project outputs remain on disk.
+This first release walks source files rather than evaluating Compile items: conditional exclusions, linked files, shared/multiple projects, imported targets and multi-targeting are not fully modeled. Analyze one project directory at a time; ambiguous same-directory project files are reported as failures. `--configuration Release` selects a static Release-like context, not a full MSBuild evaluation.
 
-Omit the `--include` arguments to recursively analyze all `.vb` and `.cs` files under the selected root, honoring ignore rules and skipping symlinks. This first release walks source files rather than evaluating Compile items: conditional exclusions, linked files, shared/multiple projects, imported targets and multi-targeting are not fully modeled. Analyze one project directory at a time; ambiguous same-directory project files are reported as failures. `--configuration Release` selects a static Release-like context, not a full MSBuild evaluation.
-
-Existing graphs are not overwritten unless `--force` is supplied. Do not use `--force` on an enriched graph you want to keep; choose another output directory. Exit code 0 means selected files parsed cleanly, 2 means a graph/report was written with recovered or failed inputs, and 1 means a command/setup failure. Inspect `.ua/dotnet-analysis.json` (or the existing legacy data directory) for every file's diagnostics, source hash, provider identity and syntax-only status.
+Exit code 0 means selected files parsed cleanly, 2 means a graph/report was written with recovered or failed inputs, and 1 means a command/setup failure. Inspect `.ua/dotnet-analysis.json` (or the existing legacy data directory) for every file's diagnostics, source hash, provider identity and syntax-only status.
 
 The initial graph contains declarations, merged partial types, overload-aware members, fields and syntax-based Handles relationships. It has no LLM business summaries or bound call graph. Namespaces/imports are not fabricated into file dependencies. Reflection and late binding remain unresolved. Fields and event expressions use existing resource/concept node types.
 
-## Generate Explanations with Copilot
-
-Open the intended WIP project in VS Code and invoke `/understand --full`, or ask Copilot to use the understand skill for that exact project path. Use an approved AI service: structural extraction runs locally, but enrichment can send proprietary source to the configured model. No credentials are stored by setup.
-
-The normal skill workflow writes to WIP's own `.ua` directory (or legacy `.understand-anything`), unlike the external structural pilot. These are separate outputs. Do not expect the pilot graph to be enriched in place automatically. No LLM run is part of setup.
+The standalone graph and Copilot-generated graph are separate outputs. `/understand` does not enrich the pilot graph in place; it writes to the application repo's `.ua/` directory (or existing `.understand-anything/`). No LLM run is part of setup.
 
 VB fingerprints intentionally remain content-only. Changed VB files are classified conservatively; the existing strict validator cannot prove VB symbol deletions. If incremental validation cannot preserve symbols, rerun `/understand --full`; do not bypass its checks. The same conservative policy applies to opt-in Roslyn C# fingerprints. Project-wide semantic binding and parser-neutral strict deletion validation are future stages, not enabled features.
 
@@ -60,7 +73,7 @@ VB fingerprints intentionally remain content-only. Changed VB files are classifi
 ```powershell
 .\scripts\setup-team.ps1 -Check
 git pull --ff-only
-.\scripts\setup-team.ps1 -ProjectRoot 'C:\src\Cibar\GTS.Base\Cib\Wip'
+.\scripts\setup-team.ps1
 .\scripts\setup-team.ps1 -Uninstall
 ```
 
@@ -70,9 +83,9 @@ The setup script is Windows-first. The helper, Node adapter and CLI can run on o
 
 ## Publish for Teammates
 
-Maintainers must commit all implementation files, scripts, documentation and dependency lockfiles, then push `feature/roslyn-dotnet` to this fork before distributing the clone command. Follow the repository's synchronized six-manifest versioning rule in [CLAUDE.md](CLAUDE.md) when pushing. Do not publish application source, generated project graphs, credentials or user-local configuration.
+For maintainers, keep `origin` pointed at this Roslyn-enabled fork and `upstream` pointed at `Egonex-AI/Understand-Anything`. Create new feature branches from the fork's `main` and push them to `origin`. The Roslyn implementation is already merged into `main`; publish future implementation changes and setup documentation there before distributing them. Follow the repository's synchronized six-manifest versioning rule in [CLAUDE.md](CLAUDE.md) when pushing. Do not publish application source, generated project graphs, credentials or user-local configuration.
 
-Before a team rollout, test the install, health check and a synthetic analysis from a fresh clone of the published branch, ideally on another Windows account or machine. The current development checkout has passed tests and a WIP pilot; that is not a clean-machine installation guarantee. Record the approved commit or tag so teammates use the same revision. The upstream marketplace package is not a substitute for this fork.
+Before a rollout, test the install, health check and a synthetic analysis from a fresh clone of the fork's `main`, ideally on another Windows account or machine. Record the approved commit or tag so teammates use the same revision. The upstream marketplace package is not a substitute for this fork.
 
 ## Development Gates
 

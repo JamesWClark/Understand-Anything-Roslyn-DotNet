@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DotNetPlugin, GraphBuilder, validateGraph } from '../understand-anything-plugin/packages/core/dist/index.js';
 
-const root = mkdtempSync(join(tmpdir(), 'ua-team-smoke-'));
+const root = mkdtempSync(join(tmpdir(), 'ua-dotnet-smoke-'));
 try {
   const sources = {
     'Form.vb': 'Friend Class Form\nPrivate Sub Press(sender As Object, e As System.EventArgs) Handles Button.Click\nEnd Sub\nEnd Class',

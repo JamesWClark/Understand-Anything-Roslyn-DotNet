@@ -10,7 +10,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $PluginRoot = Join-Path $RepoRoot 'understand-anything-plugin'
-$StateRoot = Join-Path $HOME '.understand-anything-team'
+$StateRoot = Join-Path $HOME '.understand-anything-roslyn-dotnet'
 $ManifestPath = Join-Path $StateRoot 'links.json'
 $Package = Get-Content -LiteralPath (Join-Path $RepoRoot 'package.json') -Raw | ConvertFrom-Json
 $PnpmVersion = (($Package.packageManager -split '@')[1] -split '\+')[0]
@@ -33,10 +33,16 @@ function Set-TeamLink([string]$Link, [string]$Target) {
         if ([IO.Path]::GetFullPath($Previous) -eq [IO.Path]::GetFullPath($Target)) { return }
         if (-not $ReplaceLinks) { throw "Conflicting link: $Link -> $Previous. Review it, then use -ReplaceLinks to replace reversibly." }
     }
-    if (-not @($script:LinkRecords | Where-Object { $_.link -eq $Link }).Count) {
-        $script:LinkRecords += [pscustomobject]@{ link = $Link; target = $Target; previous = $Previous }
-        Save-LinkRecords
+    $RecordIndex = -1
+    for ($Index = 0; $Index -lt $script:LinkRecords.Count; $Index++) {
+        if ($script:LinkRecords[$Index].link -eq $Link) { $RecordIndex = $Index; break }
     }
+    if ($RecordIndex -lt 0) {
+        $script:LinkRecords += [pscustomobject]@{ link = $Link; target = $Target; previous = $Previous }
+    } else {
+        $script:LinkRecords[$RecordIndex].target = $Target
+    }
+    Save-LinkRecords
     if ($Item) { $Item.Delete() }
     New-Item -ItemType Directory -Path (Split-Path -Parent $Link) -Force | Out-Null
     New-Item -ItemType Junction -Path $Link -Target $Target | Out-Null
