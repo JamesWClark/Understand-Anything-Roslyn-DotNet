@@ -64,15 +64,15 @@ git diff --stat main...upstream/main
 git diff --name-status main...upstream/main
 ```
 
-Read each upstream commit and inspect the changed code and tests, including renames and deletions. Compare changed paths against fork-only changes. Run a non-mutating merge simulation:
+Read each upstream commit and inspect only the changed code/tests and the nearest owning abstraction. Compare upstream paths with fork-only paths to identify overlaps. Do not re-audit the entire Roslyn pipeline when the changed paths do not touch it. Run a non-mutating merge simulation:
 
 ```text
 git merge-tree --write-tree main upstream/main
 ```
 
-Report the commit counts, upstream changes, overlapping files, predicted textual conflicts, behavioral risks, and the next validation steps. A clean merge simulation is not proof of behavioral compatibility.
+Report the commit counts, upstream changes, overlapping files, predicted textual conflicts, behavioral risks, and the narrow tests indicated by those paths. For a small delta, use a fast path: if changes are localized, there are no Roslyn-sensitive overlaps, and the merge simulation is clean, recommend integrating and running only the affected tests. A clean merge simulation is not proof of behavioral compatibility, but it does not justify a full audit by itself.
 
-Inspect these fork integration points when relevant:
+Inspect these fork integration points only when upstream changes touch or depend on them:
 
 - `understand-anything-plugin/packages/core/src/plugins/dotnet-plugin.ts`
 - `understand-anything-plugin/packages/core/src/analyzer/graph-builder.ts`
@@ -91,7 +91,7 @@ For upstream VB.NET/.NET support, explicitly check:
 - Whether incremental fingerprints preserve conservative VB handling. Never interpret missing VB symbols as confirmed deletions unless a validator supports that conclusion.
 - Whether tests cover provider selection, VB graph construction, partial/designer declarations, recovered syntax, incremental changes, and standalone analysis as applicable.
 
-Also review general contract changes in graph schema, language defaults, imports, and manifests. Compare all six versioned manifests with the upstream result; `CLAUDE.md` lists them.
+For all changes, check the directly affected contracts and compare versioned manifests when upstream changes package/plugin metadata. Check all six manifests before pushing, as required by `CLAUDE.md`.
 
 ### Decision 1: Integrate?
 
@@ -111,18 +111,34 @@ Only after the user selects integration:
 1. Recheck that the worktree is clean and no Git operation is in progress.
 2. Compare `main` with `origin/main`. If local `main` is only behind, offer fast-forwarding it before branching or stopping with it unchanged. If branches diverged or local commits are unpublished, explain the divergence and offer safe base choices for that situation; do not discard or rebase those commits. Keep freeform enabled for an alternative.
 3. Create a unique `sync/upstream-<timestamp>` branch from the agreed fork `main` base.
-4. Merge `upstream/main` with a merge commit:
+4. For a whole-upstream sync, merge `upstream/main` with a merge commit. Prefer this over cherry-picking because it preserves ancestry and records the upstream base for the next sync:
 
    ```text
    git merge --no-ff upstream/main
    ```
+
+   Cherry-pick only when the user explicitly wants a subset of upstream commits. Prefer non-merge commits; cherry-picking upstream merge commits requires choosing a mainline parent and can make later syncs harder to reason about.
 
 5. Resolve clear mechanical conflicts by preserving both changes and inspect the full result. Never choose `ours` or `theirs` for an entire file. If analyzer ownership, graph schema, fingerprint semantics, or any other behavior is ambiguous, present the concrete resolutions needed with `vscode_askQuestions` and wait for the user's choice. Keep freeform enabled; do not add a duplicate custom option.
 6. If the user chooses to pause or stop during a conflict, do not abort or discard the merge state automatically. Offer resuming conflict resolution or keeping the merge paused, with freeform enabled for another instruction. Aborting requires explicit confirmation.
 
 ## Stage 4: Validate the Integration
 
-Inspect the complete merge diff and add/update focused tests for changed behavior. Run the relevant focused tests first, then the normal fork gates as applicable:
+Inspect the merge diff and add/update focused tests for changed behavior. Choose validation from the changed paths; do not run the full root suite by default for a small, localized upstream delta.
+
+Typical focused checks:
+
+| Upstream change | Focused validation |
+| --- | --- |
+| Python import resolution | `npx --yes pnpm@10.6.2 exec vitest run tests/skill/understand/test_extract_import_map.test.mjs -t "Python resolver"` |
+| Makefile parsing | `npx --yes pnpm@10.6.2 --filter @understand-anything/core exec vitest run src/__tests__/parsers.test.ts -t "MakefileParser"` |
+| Package/plugin version metadata only | Verify the six versioned manifests are aligned and valid JSON; no analysis test is needed solely for a version string. |
+| Shared core APIs, parser registry, or graph schema | Core build and core test suite. |
+| Roslyn provider, helper, graph conversion, or incremental fingerprints | `build:dotnet`, `check:dotnet`, and focused Roslyn/incremental tests. |
+
+Run the full root suite only when changes span interacting workflows, focused tests indicate broader risk, a release/CI gate requires it, or the user requests it. For the current setup, that suite includes many subprocess-heavy temporary-repository tests and can take several minutes; don't impose it automatically on a small import/parser fix.
+
+When changes are cross-cutting or focused checks reveal wider impact, the normal fork gates are:
 
 ```text
 npx --yes pnpm@10.6.2 build:dotnet
