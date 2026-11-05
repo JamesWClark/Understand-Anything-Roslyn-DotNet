@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -13,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { git as validatorGit } from '../../../understand-anything-plugin/skills/understand/validate-incremental-symbols.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '../../..');
@@ -24,6 +26,8 @@ const prepareScript = join(skillDir, 'prepare-incremental.mjs');
 const finalizeScript = join(skillDir, 'finalize-incremental.mjs');
 const mergeScript = join(skillDir, 'merge-batch-graphs.py');
 const retryScript = join(skillDir, 'prepare-symbol-retry.mjs');
+const roslynHelper = join(repoRoot, 'understand-anything-plugin', 'tools', 'dotnet-analyzer', 'bin', 'Release', 'net10.0', 'DotNetAnalyzer.dll');
+const roslynAvailable = existsSync(roslynHelper) && spawnSync('dotnet', ['--version'], { encoding: 'utf8' }).status === 0;
 
 const python = (() => {
   for (const command of ['python3', 'python']) {
@@ -232,6 +236,76 @@ afterEach(async () => {
 });
 
 describe('incremental symbol publication gate', { timeout: 30_000 }, () => {
+  it('preserves a UTF-8 BOM and rejects invalid historical bytes', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ua-incremental-encoding-'));
+    roots.push(root);
+    git(root, ['init', '-b', 'main']);
+    git(root, ['config', 'user.email', 'test@example.com']);
+    git(root, ['config', 'user.name', 'Test User']);
+    writeProjectFile(root, 'View.vb', '\uFEFFClass View\nEnd Class\n');
+    const valid = commit(root, 'valid UTF-8');
+    expect(validatorGit(root, ['show', `${valid}:./View.vb`], { strictUtf8: true }).startsWith('\uFEFF')).toBe(true);
+    writeFileSync(join(root, 'View.vb'), Buffer.from([0x43, 0x6c, 0x61, 0x73, 0x73, 0x20, 0xff]));
+    const invalid = commit(root, 'invalid UTF-8');
+    expect(() => validatorGit(root, ['show', `${invalid}:./View.vb`], { strictUtf8: true })).toThrow();
+  });
+
+  it.skipIf(!roslynAvailable).each(['preserved', 'utf16-project', 'deleted', 'recovered', 'changed-project', 'changed-project-history'])('validates Roslyn VB revisions before publication: %s', outcome => {
+    const path = 'src/View.vb';
+    const project = 'Fixture.vbproj';
+    const original = '\uFEFFOption Strict On\nPublic Class View\n    Public Sub Run()\n    End Sub\nEnd Class\n';
+    const projectXml = '<Project><PropertyGroup><RootNamespace>Fixture</RootNamespace></PropertyGroup></Project>';
+    const projectContent = outcome === 'utf16-project' ? Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(projectXml, 'utf16le')]) : projectXml;
+    const fixture = symbolFixture(2, { [project]: projectContent, [path]: original });
+    const graphPath = join(fixture.dataDir, 'knowledge-graph.json');
+    const graph = JSON.parse(readFileSync(graphPath, 'utf8'));
+    const file = graph.nodes.find(node => node.filePath === path && node.type === 'file');
+    const type = { id: `class:${path}:View`, type: 'class', name: 'View', filePath: path, lineRange: [2, 5], summary: 'View', tags: ['fixture'], complexity: 'simple' };
+    const method = { id: `function:${path}:Run`, type: 'function', name: 'Run', filePath: path, lineRange: [3, 4], summary: 'Run', tags: ['fixture'], complexity: 'simple' };
+    graph.nodes.push(type, method);
+    graph.edges.push(...[type, method].map(node => ({ source: file.id, target: node.id, type: 'contains', direction: 'forward', weight: 1 })));
+    writeFileSync(graphPath, JSON.stringify(graph));
+    const current = outcome === 'deleted'
+      ? '\uFEFFOption Strict On\nPublic Class View\n    Public Sub Keep()\n    End Sub\nEnd Class\n'
+      : outcome === 'recovered' ? '\uFEFFOption Strict On\nPublic Class View\n    Public Sub Run(\nEnd Class\n'
+        : '\uFEFFOption Strict On\n\nPublic Class View\n    Public Sub Run()\n    End Sub\nEnd Class\n';
+    writeProjectFile(fixture.root, path, current);
+    if (outcome === 'changed-project-history') writeProjectFile(fixture.root, project, '<Project><PropertyGroup><RootNamespace>Changed</RootNamespace></PropertyGroup></Project>');
+    const head = commit(fixture.root, 'update VB page');
+    const { plan } = prepare(fixture.root, fixture.baseCommit);
+    expect(plan.filesToReanalyze).toContain(path);
+    const newType = { ...type, lineRange: outcome === 'deleted' ? [2, 5] : [3, 6] };
+    const newMethod = { ...method, lineRange: [4, 5] };
+    const nodes = outcome === 'deleted' ? [file, newType] : [file, newType, newMethod];
+    if (plan.filesToReanalyze.includes(project)) nodes.push(graph.nodes.find(node => node.filePath === project && node.type === 'file'));
+    const edges = outcome === 'deleted' ? [] : [{ source: newType.id, target: newMethod.id, type: 'contains', direction: 'forward', weight: 1 }];
+    fixture.write('batch-1.json', { nodes, edges });
+    if (outcome === 'changed-project') writeProjectFile(fixture.root, project, '<Project><PropertyGroup><RootNamespace>Changed</RootNamespace></PropertyGroup></Project>');
+    const before = fixture.persisted();
+    const priorHelper = process.env.UA_DOTNET_ANALYZER;
+    process.env.UA_DOTNET_ANALYZER = roslynHelper;
+    try {
+      const merged = spawnSync(python, [mergeScript, fixture.root], { cwd: fixture.root, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+      if (outcome === 'preserved' || outcome === 'utf16-project') {
+        expect(merged.status, merged.stderr).toBe(0);
+        run(process.execPath, [finalizeScript, fixture.root], fixture.root);
+        expect(fixture.persisted().map(JSON.parse).map(item => item.project?.gitCommitHash ?? item.gitCommitHash)).toEqual([head, head, head]);
+      } else {
+        expect(merged.status).not.toBe(0);
+        const finalized = spawnSync(process.execPath, [finalizeScript, fixture.root], { cwd: fixture.root, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+        expect(finalized.status).not.toBe(0);
+        expect(fixture.persisted()).toEqual(before);
+        const report = fixture.read('incremental-symbol-report.json');
+        expect(report.ok).toBe(false);
+        if (outcome === 'deleted' || outcome === 'recovered') expect(report.files.find(item => item.filePath === path).missing[0].status).toBe('unknown');
+        else expect(report.errors.join(' ')).toMatch(/git diff failed|project context/i);
+      }
+    } finally {
+      if (priorHelper === undefined) delete process.env.UA_DOTNET_ANALYZER;
+      else process.env.UA_DOTNET_ANALYZER = priorHelper;
+    }
+  });
+
   it.each([
     ['rb', 'class A\n def run; end\nend\nclass B; end\n', 'class A\n def keep; end\nend\nclass B\n attr_reader :run\nend\n'],
     ['ts', 'class A { run() {} }\nclass B {}\n', 'class A { keep() {} }\nclass B {}\nObject.defineProperty(B.prototype, "run", { value() {} });\n'],

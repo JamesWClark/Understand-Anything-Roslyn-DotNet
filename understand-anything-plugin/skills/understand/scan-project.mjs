@@ -768,7 +768,9 @@ async function main() {
   const candidates = enumerateFiles(projectRoot).filter(
     rel =>
       !excludeAnalysisData ||
-      (!rel.startsWith('.ua/') && !rel.startsWith('.understand-anything/')),
+      !rel.split('/').some(
+        segment => segment === '.ua' || segment === '.understand-anything',
+      ),
   );
 
   // 2. Filter via createIgnoreFilter (defaults + .understandignore + CLI excludes).

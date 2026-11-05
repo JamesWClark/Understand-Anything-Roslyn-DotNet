@@ -82,14 +82,45 @@ export class DotNetPlugin implements AnalyzerPlugin {
     }
   }
 
-  prepare(paths: string[]): void {
-    const selected = [...new Set(paths.filter(path => this.supports(path)))];
-    if (selected.length === 0) return;
-    for (const path of selected) { this.cache.delete(path); this.failures.delete(path); }
+  private helperPath(): string {
     const toolRoot = fileURLToPath(new URL("../../../../tools/dotnet-analyzer/", import.meta.url));
     const helper = this.options.helperPath ?? process.env.UA_DOTNET_ANALYZER ??
       [resolve(toolRoot, "publish/DotNetAnalyzer.dll"), resolve(toolRoot, "bin/Release/net10.0/DotNetAnalyzer.dll")].find(path => existsSync(path));
     if (!helper || !existsSync(helper)) throw new Error("Roslyn helper not built. Run scripts/setup-dotnet.ps1 or pnpm build:dotnet.");
+    return helper;
+  }
+
+  private analyzeInputs(files: { path: string; source: string; projectPath: string | null; projectIdentity: string; configuration: string }[]) {
+    const helper = this.helperPath();
+    const run = spawnSync("dotnet", [helper], { input: JSON.stringify({ protocolVersion: 1, files }),
+      encoding: "utf8", timeout: 120_000, maxBuffer: 64 * 1024 * 1024, windowsHide: true });
+    if (run.error || run.status !== 0) throw new Error("Roslyn helper failed: " + (run.error?.message ?? run.stderr));
+    const response = responseSchema.parse(JSON.parse(run.stdout));
+    if (response.results.length !== files.length) throw new Error("Roslyn helper omitted files");
+    return response;
+  }
+
+  analyzeSource(path: string, source: string): StructuralAnalysis {
+    if (!this.supports(path)) throw new Error("Unsupported .NET path: " + path);
+    const projectPath = this.projectFor(path);
+    const files = [{ path, source, projectPath, projectIdentity: projectPath ? relative(this.root, projectPath).split("\\").join("/") : "loose-files",
+      configuration: this.options.configuration ?? "Debug" }];
+    const response = this.analyzeInputs(files);
+    const result = response.results[0];
+    if (result.path !== path || result.sourceHash !== hash(source)) throw new Error("Invalid Roslyn result: " + path);
+    const { structure, ...facts } = result;
+    return {
+      ...structure,
+      functions: structure.functions.map(({ returnType, ...method }) => ({ ...method, ...(returnType === null ? {} : { returnType }) })),
+      dotNet: { ...facts, provider: "roslyn", providerVersion: response.providerVersion, protocolVersion: 1 },
+    };
+  }
+
+  prepare(paths: string[]): void {
+    const selected = [...new Set(paths.filter(path => this.supports(path)))];
+    if (selected.length === 0) return;
+    for (const path of selected) { this.cache.delete(path); this.failures.delete(path); }
+    this.helperPath();
     for (let start = 0; start < selected.length; start += 32) {
       const files = selected.slice(start, start + 32).flatMap(path => {
         try {
@@ -104,12 +135,8 @@ export class DotNetPlugin implements AnalyzerPlugin {
         }
       });
       if (files.length === 0) continue;
-      const run = spawnSync("dotnet", [helper], { input: JSON.stringify({ protocolVersion: 1, files }),
-        encoding: "utf8", timeout: 120_000, maxBuffer: 64 * 1024 * 1024, windowsHide: true });
-      if (run.error || run.status !== 0) throw new Error("Roslyn helper failed: " + (run.error?.message ?? run.stderr));
-      const response = responseSchema.parse(JSON.parse(run.stdout));
+      const response = this.analyzeInputs(files);
       this.providerVersion = response.providerVersion;
-      if (response.results.length !== files.length) throw new Error("Roslyn helper omitted files");
       for (const result of response.results) {
         const input = files.find(file => file.path === result.path);
         if (!input || result.sourceHash !== hash(input.source) || this.cache.has(result.path)) throw new Error("Invalid or duplicate Roslyn result: " + result.path);

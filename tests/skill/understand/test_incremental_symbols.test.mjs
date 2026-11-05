@@ -1,11 +1,90 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { TreeSitterPlugin, builtinLanguageConfigs } from '../../../understand-anything-plugin/packages/core/dist/index.js';
-import { compareFileSymbols } from '../../../understand-anything-plugin/skills/understand/validate-incremental-symbols.mjs';
+import { compareDotNetFileSymbols, compareFileSymbols } from '../../../understand-anything-plugin/skills/understand/validate-incremental-symbols.mjs';
 
 let parser;
 beforeAll(async () => {
   parser = new TreeSitterPlugin(builtinLanguageConfigs.filter(config => config.treeSitter));
   await parser.init();
+});
+
+describe('incremental Roslyn VB symbol matching', () => {
+  const filePath = 'src/a.vb';
+  const vbNode = (name, lineRange, id = `function:${filePath}:${name}`) => ({
+    id, name, type: 'function', filePath, lineRange,
+  });
+  const declaration = (owner, name, lineRange, signature = `Sub ${name}()`) => ({
+    kind: 'method', owner, name, lineRange, identity: `project|${owner}|method|${signature}`,
+  });
+  const evidence = (declarations, syntaxStatus = 'complete') => ({ dotNet: {
+    provider: 'roslyn', semanticStatus: 'syntax-only', syntaxStatus, diagnostics: [], declarations,
+  } });
+  const vbGraph = nodes => ({ filePath, nodes, edges: [] });
+  const check = (previous, current, base, head) => compareDotNetFileSymbols(
+    vbGraph(previous), vbGraph(current), evidence(base), evidence(head),
+  );
+
+  it('preserves a uniquely matched method after line movement and ID change', () => {
+    const old = vbNode('Run', [2, 4]);
+    const next = vbNode('Run', [7, 9], `function:${filePath}:A.Run`);
+    const result = check([old], [next], [declaration('A', 'Run', [2, 4])], [declaration('A', 'Run', [7, 9])]);
+    expect(result.missing).toEqual([]);
+    expect(result.replacements).toEqual([{ oldId: old.id, newId: next.id }]);
+  });
+
+  it('rejects a reused graph ID when the method moves to another owner', () => {
+    const method = vbNode('Run', [2, 4]);
+    const result = check([method], [method], [declaration('A', 'Run', [2, 4])], [declaration('B', 'Run', [2, 4])]);
+    expect(result.missing[0].status).toBe('unknown');
+  });
+
+  it('rejects a unique same-named declaration outside the old graph range', () => {
+    const method = vbNode('Run', [8, 10]);
+    const result = check([method], [method], [declaration('A', 'Run', [2, 4])], [declaration('A', 'Run', [8, 10])]);
+    expect(result.missing[0].status).toBe('unknown');
+  });
+
+  it('rejects an unowned method without a same-revision source range', () => {
+    const method = vbNode('Run', undefined);
+    const run = declaration('A', 'Run', [2, 4]);
+    expect(check([method], [method], [run], [run]).missing[0].status).toBe('unknown');
+  });
+
+  it('checks explicit graph ownership against the declaring Roslyn type', () => {
+    const method = vbNode('Run', [2, 4]);
+    const parent = { id: `class:${filePath}:A`, name: 'A', type: 'class', filePath, lineRange: [1, 5] };
+    const parentFact = { kind: 'class', owner: '', name: 'A', lineRange: [1, 5], identity: 'project|class|A', typeIdentity: 'A`0' };
+    const methodFact = { ...declaration('A', 'Run', [2, 4]), containingTypeIdentity: 'A`0' };
+    const current = { ...vbGraph([parent, method]), edges: [{ source: parent.id, target: method.id, type: 'contains' }] };
+    expect(compareDotNetFileSymbols(vbGraph([method]), current, evidence([parentFact, methodFact]), evidence([parentFact, methodFact])).missing).toEqual([]);
+    const wrongParent = { ...parent, lineRange: [10, 15] };
+    const wrongCurrent = { ...current, nodes: [wrongParent, method] };
+    expect(compareDotNetFileSymbols(vbGraph([method]), wrongCurrent, evidence([parentFact, methodFact]), evidence([parentFact, methodFact]))
+      .missing[0].status).toBe('still-present');
+  });
+
+  it('reports an existing source method omitted from the new graph', () => {
+    const method = vbNode('Run', [2, 4]);
+    const result = check([method], [], [declaration('A', 'Run', [2, 4])], [declaration('A', 'Run', [6, 8])]);
+    expect(result.missing[0].status).toBe('still-present');
+  });
+
+  it('never confirms an absent VB declaration as deleted', () => {
+    const method = vbNode('Run', [2, 4]);
+    const result = check([method], [], [declaration('A', 'Run', [2, 4])], [declaration('A', 'Keep', [2, 4])]);
+    expect(result.missing[0].status).toBe('unknown');
+  });
+
+  it('blocks recovered source, duplicate old bindings, and ambiguous overloads', () => {
+    const method = vbNode('Run', [2, 4]);
+    const run = declaration('A', 'Run', [2, 4]);
+    expect(compareDotNetFileSymbols(vbGraph([method]), vbGraph([method]), evidence([run], 'recovered'), evidence([run]))
+      .missing[0].status).toBe('unknown');
+    expect(check([method, { ...method, id: 'old:duplicate' }], [method], [run], [run]).missing)
+      .toHaveLength(2);
+    const overloaded = [run, declaration('A', 'Run', [2, 4], 'Sub Run(value As Integer)')];
+    expect(check([method], [method], overloaded, overloaded).missing[0].status).toBe('unknown');
+  });
 });
 
 const node = (name, extra = {}) => ({

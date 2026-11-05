@@ -14,6 +14,12 @@ import {
 } from "../staleness.js";
 
 const temporaryDirectories: string[] = [];
+const analysisDataDirectories = [
+  ".understand-anything",
+  ".ua",
+  "apps/component/.understand-anything",
+  "apps/component/.ua",
+];
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, {
@@ -158,7 +164,7 @@ describe(
     });
   });
 
-  it.each([".understand-anything", ".ua"])(
+  it.each(analysisDataDirectories)(
     "ignores untracked Understand Anything output files in %s",
     async (dataDir) => {
     const { repoDir, baseline } = createRepository();
@@ -183,7 +189,7 @@ describe(
     },
   );
 
-  it.each([".understand-anything", ".ua"])(
+  it.each(analysisDataDirectories)(
     "ignores commits that only change Understand Anything output files in %s",
     async (dataDir) => {
       const { repoDir, baseline } = createRepository();
@@ -204,7 +210,7 @@ describe(
     },
   );
 
-  it.each([".understand-anything", ".ua"])(
+  it.each(analysisDataDirectories)(
     "still reports source changes beside ignored output files in %s",
     async (dataDir) => {
       const { repoDir, baseline } = createRepository();

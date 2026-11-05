@@ -1,6 +1,6 @@
 /** Shared merge/finalize gate. Reports evidence; never restores old graph data. */
 import { createRequire } from 'node:module';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -283,10 +283,95 @@ export function compareFileSymbols(previous, current, baseEvidence, headEvidence
   };
 }
 
-export function git(root, args) {
-  const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+function dotNetDeclarations(evidence) {
+  const facts = evidence?.dotNet;
+  if (facts?.provider !== 'roslyn' || facts.semanticStatus !== 'syntax-only'
+    || facts.syntaxStatus !== 'complete' || !Array.isArray(facts.declarations)
+    || !Array.isArray(facts.diagnostics) || facts.diagnostics.some(item => item.severity === 'error')) return null;
+  return facts.declarations.filter(item => ['class', 'module', 'struct', 'interface', 'record', 'enum',
+    'method', 'constructor', 'operator', 'delegate'].includes(item.kind));
+}
+
+function resolveDotNetSymbol(node, graph, declarations) {
+  const kind = symbolKind(node);
+  const names = nodeNames(node);
+  let candidates = declarations.filter(item => {
+    const declarationKind = ['method', 'constructor', 'operator', 'delegate'].includes(item.kind) ? 'callable' : 'class';
+    return declarationKind === kind && (names.has(qualifiedName(item.name))
+      || (item.owner && names.has(qualifiedName(`${item.owner}.${item.name}`))));
+  });
+  const parents = classOwners(node, graph);
+  if (parents.length > 1 || (symbolKind(node) === 'callable' && parents.length === 0 && !validRange(node.lineRange))) return null;
+  if (parents.length) {
+    const parent = parents[0];
+    const parentNames = nodeNames(parent);
+    let parentDeclarations = declarations.filter(item => !['method', 'constructor', 'operator', 'delegate'].includes(item.kind)
+      && (parentNames.has(qualifiedName(item.name))
+        || (item.owner && parentNames.has(qualifiedName(`${item.owner}.${item.name}`)))));
+    if (validRange(parent.lineRange)) parentDeclarations = parentDeclarations.filter(item => validRange(item.lineRange)
+      && parent.lineRange[0] >= item.lineRange[0] && parent.lineRange[1] <= item.lineRange[1]);
+    if (parentDeclarations.length !== 1 || !parentDeclarations[0].typeIdentity) return null;
+    candidates = candidates.filter(item => item.containingTypeIdentity === parentDeclarations[0].typeIdentity);
+  }
+  if (validRange(node.lineRange)) {
+    candidates = candidates.filter(item => validRange(item.lineRange)
+      && node.lineRange[0] >= item.lineRange[0] && node.lineRange[1] <= item.lineRange[1]);
+  }
+  return candidates.length === 1 && typeof candidates[0].identity === 'string'
+    && candidates[0].identity.length > 0 ? candidates[0] : null;
+}
+
+export function compareDotNetFileSymbols(previous, current, baseEvidence, headEvidence, sameRevision = false) {
+  const oldSymbols = previous.nodes.filter(symbolKind);
+  const newSymbols = current.nodes.filter(symbolKind);
+  const base = dotNetDeclarations(baseEvidence);
+  const head = dotNetDeclarations(headEvidence);
+  const oldMappings = base ? oldSymbols.map(node => resolveDotNetSymbol(node, previous, base)) : [];
+  const newMappings = head ? newSymbols.map(node => resolveDotNetSymbol(node, current, head)) : [];
+  const missing = [];
+  const replacements = [];
+  for (let index = 0; index < oldSymbols.length; index++) {
+    const node = oldSymbols[index];
+    if (hasPreservedIdentity(node, previous, current, sameRevision)) continue;
+    const entry = { id: node.id, name: node.name, type: node.type, status: 'unknown', reason: '' };
+    const old = oldMappings[index];
+    if (!base || !head) {
+      entry.reason = 'Roslyn syntax evidence is unavailable or incomplete';
+    } else if (!old || base.filter(item => item.identity === old.identity).length !== 1
+      || oldMappings.filter(item => item?.identity === old.identity).length !== 1) {
+      entry.reason = 'Old Roslyn declaration or graph binding is ambiguous';
+    } else {
+      const sourceMatches = head.filter(item => item.identity === old.identity);
+      const graphMatches = newMappings.filter(item => item?.identity === old.identity);
+      if (sourceMatches.length === 1 && graphMatches.length === 1) {
+        const matched = newSymbols[newMappings.findIndex(item => item?.identity === old.identity)];
+        if (matched.id !== node.id) replacements.push({ oldId: node.id, newId: matched.id });
+        continue;
+      }
+      if (sourceMatches.length === 1 && graphMatches.length === 0) {
+        entry.status = 'still-present';
+        entry.reason = 'Roslyn declaration exists at HEAD but is missing or ambiguous in the new graph';
+      } else {
+        entry.reason = 'Roslyn declaration identity changed, disappeared, or is ambiguous; deletion is unverified';
+      }
+    }
+    missing.push(entry);
+  }
+  return { filePath: previous.filePath, beforeCount: previous.nodes.length, afterCount: current.nodes.length,
+    beforeSymbolCount: oldSymbols.length, afterSymbolCount: newSymbols.length, missing, replacements };
+}
+
+function compareEvidence(previous, current, baseEvidence, headEvidence, sameRevision = false) {
+  return baseEvidence?.dotNet || headEvidence?.dotNet
+    ? compareDotNetFileSymbols(previous, current, baseEvidence, headEvidence, sameRevision)
+    : compareFileSymbols(previous, current, baseEvidence, headEvidence, sameRevision);
+}
+
+export function git(root, args, { strictUtf8 = false, bytes = false } = {}) {
+  const result = spawnSync('git', args, { cwd: root, encoding: strictUtf8 || bytes ? 'buffer' : 'utf8', maxBuffer: 256 * 1024 * 1024 });
   if (result.status !== 0) throw new Error(`git ${args[0]} failed: ${result.stderr || result.error || result.status}`);
-  return result.stdout;
+  if (bytes) return result.stdout;
+  return strictUtf8 ? new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(result.stdout) : result.stdout;
 }
 
 export function loadSymbolContext(projectRoot, intermediateDir) {
@@ -325,16 +410,34 @@ export async function validateIncrementalSymbols(projectRoot, { graph, intermedi
     if (!Array.isArray(graph.nodes) || !Array.isArray(graph.edges)) throw new Error('Invalid assembled graph');
     report.graphHash = createHash('sha256').update(JSON.stringify(graph)).digest('hex');
     let parser;
+    let dotNet;
     const evidenceByPath = new Map();
-    const parseHead = async path => {
-      if (evidenceByPath.get(path)?.head) return evidenceByPath.get(path).head;
+    const parseSource = async (path, content) => {
+      if (/\.vb$/i.test(path)) {
+        dotNet ??= new core.DotNetPlugin({ projectRoot, configuration: process.env.UA_DOTNET_CONFIGURATION ?? 'Debug' });
+        const analysis = dotNet.analyzeSource(path, content);
+        const projectPath = analysis.dotNet?.context?.projectPath;
+        if (!projectPath) throw new Error('Roslyn project context is unavailable');
+        const project = normalizePath(relative(projectRoot, projectPath));
+        if (!project) throw new Error('Roslyn project context is outside the project root');
+        if (!git(projectRoot, ['show', `${plan.baseCommit}:./${project}`], { bytes: true })
+          .equals(git(projectRoot, ['show', `${plan.headCommit}:./${project}`], { bytes: true }))) {
+          throw new Error('Roslyn project context changed between revisions');
+        }
+        git(projectRoot, ['diff', '--quiet', '--no-ext-diff', plan.headCommit, '--', `:(literal)${project}`]);
+        return analysis;
+      }
       if (!parser) {
         parser = new core.TreeSitterPlugin(core.builtinLanguageConfigs.filter(config => config.treeSitter));
         await parser.init();
       }
+      return parser.analyzeFileStrict(path, content);
+    };
+    const parseHead = async path => {
+      if (evidenceByPath.get(path)?.head) return evidenceByPath.get(path).head;
       // :./ keeps git-show relative to projectRoot, including monorepo subdirectories.
-      const headContent = git(projectRoot, ['show', `${plan.headCommit}:./${path}`]);
-      const evidence = { head: parser.analyzeFileStrict(path, headContent) };
+      const headContent = git(projectRoot, ['show', `${plan.headCommit}:./${path}`], { strictUtf8: /\.vb$/i.test(path) });
+      const evidence = { head: await parseSource(path, headContent) };
       evidenceByPath.set(path, evidence);
       return evidence.head;
     };
@@ -342,8 +445,8 @@ export async function validateIncrementalSymbols(projectRoot, { graph, intermedi
       await parseHead(path);
       const evidence = evidenceByPath.get(path);
       if (!evidence.base) {
-        const oldContent = git(projectRoot, ['show', `${plan.baseCommit}:./${path}`]);
-        evidence.base = parser.analyzeFileStrict(path, oldContent);
+        const oldContent = git(projectRoot, ['show', `${plan.baseCommit}:./${path}`], { strictUtf8: /\.vb$/i.test(path) });
+        evidence.base = await parseSource(path, oldContent);
       }
       return evidence;
     };
@@ -367,7 +470,7 @@ export async function validateIncrementalSymbols(projectRoot, { graph, intermedi
           report.errors.push(`${previous.filePath}: ${error.message}`);
         }
       }
-      const result = compareFileSymbols(previous, current, baseEvidence, headEvidence);
+      const result = compareEvidence(previous, current, baseEvidence, headEvidence);
       report.files.push(result);
       if (result.missing.some(node => node.status !== 'deleted')) report.unresolvedFiles.push(previous.filePath);
     }
@@ -402,7 +505,7 @@ export async function validateIncrementalSymbols(projectRoot, { graph, intermedi
           const current = fileGraph(previous.filePath);
           const needsEvidence = previous.nodes.some(node => symbolKind(node) && !hasPreservedIdentity(node, previous, current, true));
           const evidence = needsEvidence && previous.filePath ? await parseHead(previous.filePath) : undefined;
-          const result = compareFileSymbols(previous, current, evidence, evidence, true);
+          const result = compareEvidence(previous, current, evidence, evidence, true);
           const missing = new Set(result.missing.map(node => node.id));
           const aliases = new Map(result.replacements.map(({ oldId, newId }) => [oldId, newId]));
           for (const node of previous.nodes) {

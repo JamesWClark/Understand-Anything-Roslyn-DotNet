@@ -39,11 +39,12 @@ static class Analyzer
         var configuration = file.Configuration ?? "Debug";
         var context = ReadProject(file.ProjectPath, configuration);
         var rootNamespace = vb ? context.RootNamespace : "";
+        var source = file.Source.StartsWith('\uFEFF') ? file.Source[1..] : file.Source;
         SyntaxTree tree = vb
-            ? VisualBasicSyntaxTree.ParseText(file.Source, VisualBasicParseOptions.Default
+            ? VisualBasicSyntaxTree.ParseText(source, VisualBasicParseOptions.Default
                 .WithLanguageVersion(VbLanguageVersion(context.LanguageVersion))
                 .WithPreprocessorSymbols(context.Symbols.Select(entry => new KeyValuePair<string, object>(entry.Key, entry.Value))), file.Path)
-            : CSharpSyntaxTree.ParseText(file.Source, CSharpParseOptions.Default
+            : CSharpSyntaxTree.ParseText(source, CSharpParseOptions.Default
                 .WithLanguageVersion(CsLanguageVersion(context.LanguageVersion))
                 .WithPreprocessorSymbols(context.Symbols.Where(entry => entry.Value is true).Select(entry => entry.Key)), file.Path);
         var root = tree.GetRoot();

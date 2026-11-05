@@ -54,6 +54,33 @@ describe.skipIf(!existsSync(helper))("Roslyn provider integration", () => {
     expect(results["Broken.vb"].dotNet!.diagnostics.some(diagnostic => diagnostic.severity === "error")).toBe(true);
   });
 
+  it("parses a leading UTF-8 BOM without changing the source cache identity", () => {
+    const source = "\uFEFFOption Strict On\nPublic Class Sample\nPublic Sub Run()\nEnd Sub\nEnd Class";
+    const { plugin, results } = analyze({ "Form.vb": source });
+    expect(results["Form.vb"].dotNet!.syntaxStatus).toBe("complete");
+    expect(results["Form.vb"].dotNet!.diagnostics.filter(diagnostic => diagnostic.severity === "error")).toEqual([]);
+    expect(results["Form.vb"].functions[0]).toMatchObject({ name: "Run", owner: "Sample", lineRange: [3, 4] });
+    expect(() => plugin.analyzeFile("Form.vb", source.slice(1))).toThrow(/stale/);
+  });
+
+  it("parses a leading BOM in opt-in C# source", () => {
+    const source = "\uFEFFusing System;\npublic class Sample { public void Run() {} }";
+    const { plugin, results } = analyze({ "Type.cs": source }, true);
+    expect(results["Type.cs"].dotNet!.syntaxStatus).toBe("complete");
+    expect(results["Type.cs"].functions[0]).toMatchObject({ name: "Run", owner: "Sample" });
+    expect(() => plugin.analyzeFile("Type.cs", source.slice(1))).toThrow(/stale/);
+  });
+
+  it("analyzes revision text without changing the current source or cache", () => {
+    const current = "Class Sample\nPublic Sub Current()\nEnd Sub\nEnd Class";
+    const previous = "Class Sample\nPublic Sub Previous()\nEnd Sub\nEnd Class";
+    const { plugin } = analyze({ "Form.vb": current });
+    const old = plugin.analyzeSource("Form.vb", previous);
+    expect(old.dotNet!.syntaxStatus).toBe("complete");
+    expect(old.functions[0]).toMatchObject({ name: "Previous", owner: "Sample" });
+    expect(plugin.analyzeFile("Form.vb", current).functions[0].name).toBe("Current");
+  });
+
   it("handles Unicode and bracketed identifiers through UTF-8 JSON", () => {
     const { results } = analyze({ "Unicode.vb": "Class [Class]\nPublic Sub Caf\u00e9()\nEnd Sub\nEnd Class" });
     expect(results["Unicode.vb"].dotNet!.syntaxStatus).toBe("complete");
